@@ -14,8 +14,8 @@ namespace GameLauncherReborn {
 
         public static string[] serverlisturl = new string[] {
             mainserver + "/serverlist.json",
-	        "https://launchpad.soapboxrace.world/servers",
-            "http://api.nightriderz.world/servers.json"
+            //"https://launchpad.soapboxrace.world/servers", // removed due to innactivity from leo (TWIO is down for more than 2 weeks and still present)
+            //"http://api.nightriderz.world/servers.json",
         }; 
 
         //public static string serverlisturl = mainserver + "/servers";
@@ -31,6 +31,11 @@ namespace GameLauncherReborn {
 
         public static int ProxyPort = new Random().Next(6260, 6269);
         public static Boolean sendRequest = true;
+
+        public static Boolean CanDisableGame = true;
+
+        public static string rememberjson = "";
+        public static string discordid = String.Empty;
 
         public static void runAsAdmin() {
             string[] args = Environment.GetCommandLineArgs();

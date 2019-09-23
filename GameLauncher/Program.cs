@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
@@ -21,6 +22,8 @@ namespace GameLauncher {
 
             File.Delete("log.txt");
 
+            Log.StartLogging();
+
             Log.Debug("Setting up current directory: " + Path.GetDirectoryName(Application.ExecutablePath));
             Directory.SetCurrentDirectory(Path.GetDirectoryName(Application.ExecutablePath));
 
@@ -37,9 +40,19 @@ namespace GameLauncher {
             }
 
 			if(!File.Exists("GameLauncherUpdater.exe")) {
-				try {
-					File.WriteAllBytes("GameLauncherUpdater.exe", new WebClientWithTimeout().DownloadData(Self.mainserver + "/files/GameLauncherUpdater.exe"));
-                } catch { /* ignored */ }
+                Log.Debug("Starting GameLauncherUpdater downloader");
+                try {
+                    using (WebClientWithTimeout wc = new WebClientWithTimeout()) {
+                        wc.DownloadFileCompleted += (object sender, AsyncCompletedEventArgs e) => {
+                            if (new FileInfo("GameLauncherUpdater.exe").Length == 0) {
+                                File.Delete("GameLauncherUpdater.exe");
+                            }
+                        };
+                        wc.DownloadFileAsync(new Uri(Self.mainserver + "/files/GameLauncherUpdater.exe"), "GameLauncherUpdater.exe");
+                    }
+                } catch(Exception ex) {
+                    Log.Debug("Failed to download updater. " + ex.Message);
+                }
             }
 
             if (!File.Exists("servers.json")) {
@@ -66,45 +79,46 @@ namespace GameLauncher {
                         string[] files = {
                             "SharpRaven.dll - 2.4.0",
                             "Flurl.dll - 2.8.0",
-                            "Flurl.Http.dll - 2.4.0",
+                            "Flurl.Http.dll - 2.3.2",
                             "INIFileParser.dll - 2.5.2",
                             "Microsoft.WindowsAPICodePack.dll - 1.1.0.0",
                             "Microsoft.WindowsAPICodePack.Shell.dll - 1.1.0.0",
-                            "Nancy.dll - 1.4.5",
+                            "Nancy.dll - 1.4.4",
                             "Nancy.Hosting.Self.dll - 1.4.1",
-                            "Newtonsoft.Json.dll - 12.0.1",
+                            "Newtonsoft.Json.dll - 11.0.2",
                         };
 
                         var missingfiles = new List<string>();
 
-                        foreach (var file in files) {
-                            var splitFileVersion = file.Split(new string[] { " - " }, StringSplitOptions.None);
+                        if(!DetectLinux.LinuxDetected()) { //MONO Hates that...
+                            foreach (var file in files) {
+                                var splitFileVersion = file.Split(new string[] { " - " }, StringSplitOptions.None);
 
-                            if (!File.Exists(Directory.GetCurrentDirectory() + "\\" + splitFileVersion[0])) {
-                                missingfiles.Add(splitFileVersion[0] + " - Not Found");
-                            } else {
-                                try { 
-                                    var versionInfo = FileVersionInfo.GetVersionInfo(splitFileVersion[0]);
-                                    string[] versionsplit = versionInfo.ProductVersion.Split('+');
-                                    string version = versionsplit[0];
+                                if (!File.Exists(Directory.GetCurrentDirectory() + "\\" + splitFileVersion[0])) {
+                                    missingfiles.Add(splitFileVersion[0] + " - Not Found");
+                                } else {
+                                    try { 
+                                        var versionInfo = FileVersionInfo.GetVersionInfo(splitFileVersion[0]);
+                                        string[] versionsplit = versionInfo.ProductVersion.Split('+');
+                                        string version = versionsplit[0];
 
-                                    if(version == "") {
-                                        missingfiles.Add(splitFileVersion[0] + " - Invalid File");
-                                    } else { 
-                                        if(Self.CheckArchitectureFile(splitFileVersion[0]) == false) {
-                                            missingfiles.Add(splitFileVersion[0] + " - Wrong Architecture");
+                                        if(version == "") {
+                                            missingfiles.Add(splitFileVersion[0] + " - Invalid File");
                                         } else { 
-                                            if(version != splitFileVersion[1]) {
-                                                missingfiles.Add(splitFileVersion[0] + " - Invalid Version (" + splitFileVersion[1] + " != " + version + ")");
+                                            if(Self.CheckArchitectureFile(splitFileVersion[0]) == false) {
+                                                missingfiles.Add(splitFileVersion[0] + " - Wrong Architecture");
+                                            } else { 
+                                                if(version != splitFileVersion[1]) {
+                                                    missingfiles.Add(splitFileVersion[0] + " - Invalid Version (" + splitFileVersion[1] + " != " + version + ")");
+                                                }
                                             }
                                         }
+                                    } catch {
+                                        missingfiles.Add(splitFileVersion[0] + " - Invalid File");
                                     }
-                                } catch {
-                                    missingfiles.Add(splitFileVersion[0] + " - Invalid File");
                                 }
                             }
                         }
-
                         if (missingfiles.Count != 0) {
                             var message = "Cannot launch GameLauncher. The following files are invalid:\n\n";
 

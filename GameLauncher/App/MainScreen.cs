@@ -29,6 +29,9 @@ using System.IO.Compression;
 using GameLauncher.App.Classes.Auth;
 using DiscordRPC;
 using Microsoft.WindowsAPICodePack.Dialogs;
+using System.Threading.Tasks;
+using System.Collections.Concurrent;
+using System.Management;
 
 namespace GameLauncher {
     public sealed partial class MainScreen : Form {
@@ -47,6 +50,7 @@ namespace GameLauncher {
         private bool _allowRegistration;
         private bool _isDownloading = true;
         private bool _modernAuthSupport = false;
+        private bool _gameKilledBySpeedBugCheck = false;
 
         private bool _disabledModNet;
 
@@ -88,6 +92,8 @@ namespace GameLauncher {
         private Point _endPoint = new Point(562, 144);
 
         ServerInfo _serverInfo = null;
+        GetServerInformation json = new GetServerInformation();
+        String purejson = String.Empty;
 
         public static DiscordRpcClient discordRpcClient;
         private Random rnd;
@@ -124,31 +130,17 @@ namespace GameLauncher {
             Opacity = 0.9;
         }
 
-        void Discord_Disconnect(int code, string message) //TODO delete
-        {
-            MessageBox.Show($"Disconnected from Discord\n{message}", code.ToString(), MessageBoxButtons.OK, MessageBoxIcon.Exclamation);
-        }
-
-        void Discord_Error(int code, string message) //TODO delete
-        {
-            MessageBox.Show($"Discord Connection Error\n{message}", code.ToString(), MessageBoxButtons.OK, MessageBoxIcon.Error);
-        }
-
         public MainScreen(Form splashscreen) {
 
             ParseUri uri = new ParseUri(Environment.GetCommandLineArgs());
 
             if (uri.IsDiscordPresent()) {
-                var notification = new NotifyIcon() {
-                    Visible = true,
-                    Icon = System.Drawing.SystemIcons.Information,
-                    BalloonTipIcon = ToolTipIcon.Info,
-                    BalloonTipTitle = "GameLauncherReborn",
-                    BalloonTipText = "Discord features are not yet completed.",
-                };
-
-                notification.ShowBalloonTip(5000);
-                notification.Dispose();
+                Notification.Visible = true;
+                Notification.BalloonTipIcon = ToolTipIcon.Info;
+                Notification.BalloonTipTitle = "GameLauncherReborn";
+                Notification.BalloonTipText = "Discord features are not yet completed.";
+                Notification.ShowBalloonTip(5000);
+                Notification.Dispose();
             }
 
             Log.Debug("Entered mainScreen");
@@ -158,15 +150,16 @@ namespace GameLauncher {
 
             discordRpcClient = new DiscordRpcClient(Self.DiscordRPCID);
 
-            discordRpcClient.OnReady += (sender, e) => {
+            discordRpcClient.OnReady += (sender, e) => 
+            {
+                Log.Debug("Discord ready. Detected user: " + e.User.Username + ". Discord version: " + e.Version);
+                Self.discordid = e.User.ID.ToString();
             };
 
             discordRpcClient.OnError += (sender, e) =>
             {
-                MessageBox.Show($"Discord Connection Error\n{e.Message}", e.Code.ToString(), MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show($"Discord Error\n{e.Message}", e.Code.ToString(), MessageBoxButtons.OK, MessageBoxIcon.Error);
             };
-
-            //TODO: add more events
 
             discordRpcClient.Initialize();
 
@@ -178,7 +171,8 @@ namespace GameLauncher {
             if (DetectLinux.UnixDetected()) {
                 _OS = DetectLinux.Distro();
             } else {
-                _OS = (string)Registry.LocalMachine.OpenSubKey("Software\\Microsoft\\Windows NT\\CurrentVersion").GetValue("productName");
+                _OS = (from x in new ManagementObjectSearcher("SELECT Caption FROM Win32_OperatingSystem").Get().Cast<ManagementObject>()
+                       select x.GetPropertyValue("Caption")).FirstOrDefault().ToString();
             }
 
             Log.Debug("Detected OS: " + _OS);
@@ -392,11 +386,14 @@ namespace GameLauncher {
             ServerStatusBar(_colorLoading, _startPoint, _endPoint);
 
             Log.Debug("Checking internet connection");
-            if (Self.CheckForInternetConnection() == false && !DetectLinux.WineDetected()) {
-                if (_splashscreen != null) _splashscreen.Hide();
-                Log.Error("Failed to connect to internet. Please check if your firewall is not blocking launcher.");
-                MessageBox.Show(null, "Failed to connect to internet. Please check if your firewall is not blocking launcher.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+
+            new Thread(() => {
+                if (Self.CheckForInternetConnection() == false && !DetectLinux.WineDetected()) {
+                    if (_splashscreen != null) _splashscreen.Hide();
+                    Log.Error("Failed to connect to internet. Please check if your firewall is not blocking launcher.");
+                    MessageBox.Show(null, "Failed to connect to internet. Please check if your firewall is not blocking launcher.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                }
+            }).Start();
 
             if(_disabledModNet == false) { 
                 Log.Debug("Loading ModManager Cache");
@@ -453,6 +450,22 @@ namespace GameLauncher {
         private void mainScreen_Load(object sender, EventArgs e) {
             Log.Debug("Entering mainScreen_Load");
 
+            Log.Debug("Updating server list");
+            ServerListUpdater.UpdateList();
+
+            //INFO: this is here because this dll is necessary for downloading game files and I want to make it async.
+            if (!File.Exists("LZMA.dll")) {
+                Log.Debug("Starting LZMA downloader");
+                try {
+                    playProgressText.Text = "Downloading LZMA.dll...";
+                    using (WebClient wc = new WebClient()) {
+                        wc.DownloadFileAsync(new Uri(Self.mainserver + "/files/LZMA.dll"), "LZMA.dll");
+                    }
+                } catch (Exception ex) {
+                    Log.Debug("Failed to download LZMA. " + ex.Message);
+                }
+            }
+
             Log.Debug("Setting WindowName");
             Text = "GameLauncherReborn v" + Application.ProductVersion;
 
@@ -493,145 +506,13 @@ namespace GameLauncher {
                 rememberMe.Checked = true;
             }
 
-            foreach(string serverurl in Self.serverlisturl) { 
-                try {
-                    Log.Debug("Loading serverlist");
-                    WebClientWithTimeout wc = new WebClientWithTimeout();
+            serverPick.DisplayMember = "Name";
 
-                    _slresponse = wc.DownloadString(serverurl);
-                    _serverlistloaded = true;
-
-                    try
-                    {
-                        var fileStream = new FileStream("ServerCache.json", FileMode.Create);
-
-                        var dEsCryptoServiceProvider = new DESCryptoServiceProvider()
-                        {
-                            Key = Encoding.ASCII.GetBytes(_serverCacheKey),
-                            IV = Encoding.ASCII.GetBytes(_serverCacheKey)
-                        };
-
-                        var cryptoStream = new CryptoStream(fileStream, dEsCryptoServiceProvider.CreateEncryptor(), CryptoStreamMode.Write);
-                        var streamWriter = new StreamWriter(cryptoStream);
-                        streamWriter.Write(_slresponse);
-                        streamWriter.Close();
-                    } catch(Exception ex) {
-                        Log.Error(ex.Message);
-                    }
-                } catch (Exception error) {
-                    //REQUIRES REWORK...
-
-                    /*Log.Error(error.Message + ". Restoring from ServerCache");
-
-                    if (File.Exists("ServerCache.json")) {
-                        var fileStream = new FileStream("ServerCache.json", FileMode.Open);
-
-                        var dEsCryptoServiceProvider = new DESCryptoServiceProvider() {
-                            Key = Encoding.ASCII.GetBytes(_serverCacheKey),
-                            IV = Encoding.ASCII.GetBytes(_serverCacheKey)
-                        };
-
-                        var cryptoStream = new CryptoStream(fileStream, dEsCryptoServiceProvider.CreateDecryptor(), CryptoStreamMode.Read);
-                        var streamReader = new StreamReader(cryptoStream);
-                        _slresponse = streamReader.ReadToEnd();
-
-                        if (string.IsNullOrWhiteSpace(_slresponse)) {
-                            _slresponse = "[]";
-                        }
-
-                        _serverlistloaded = true;
-                    } else {
-                        _slresponse = JsonConvert.SerializeObject(new[] {
-                            new ServerInfo {
-                                Category = "OFFLINE",
-                                Name = "Offline Built-In Server",
-                                IpAddress = "http://localhost:4416/sbrw/Engine.svc",
-                                Id = "__offlinebuiltin__"
-                            }
-                        });
-                    }*/
-                }
-
-                Log.Debug("Setting loaded serverlist");
-                serverPick.DisplayMember = "Name";
-
-                var resItems = JsonConvert.DeserializeObject<List<ServerInfo>>(_slresponse);
-
-                foreach (var serverItemGroup in resItems.GroupBy(s => s.Category))
-                {          
-                    if(finalItems.FindIndex(i => string.Equals(i.Name, $"<GROUP>{serverItemGroup.Key} Servers")) == -1) {
-                        finalItems.Add(new ServerInfo {
-                            Id = $"__category-{serverItemGroup.Key}__",
-                            Name = $"<GROUP>{serverItemGroup.Key} Servers",
-                            IsSpecial = true
-                        });
-                    }
-
-                    finalItems.AddRange(serverItemGroup.ToList());
-                }
-            }
-
-            if (File.Exists("servers.json"))
-            {
-                var fileItems = JsonConvert.DeserializeObject<List<ServerInfo>>(File.ReadAllText("servers.json")) ?? new List<ServerInfo>();
-
-                if (fileItems.Count > 0)
-                {
-                    finalItems.Add(new ServerInfo
-                    {
-                        Id = "__category-CUSTOMCUSTOM__",
-                        Name = "<GROUP>Custom Servers",
-                        IsSpecial = true
-                    });
-
-                    finalItems.AddRange(fileItems.Select(si =>
-                    {
-                        si.DistributionUrl = "";
-                        si.DiscordPresenceKey = "";
-                        si.Id = SHA.HashPassword($"{si.Name}:{si.Id}:{si.IpAddress}");
-                        si.IsSpecial = false;
-                        si.Category = "CUSTOMCUSTOM";
-
-                        return si;
-                    }));
-                }
-            }
-
-            if (File.Exists("libOfflineServer.dll"))
-            {
-                finalItems.Add(new ServerInfo
-                {
-                    Id = "__category-OFFLINEOFFLINE__",
-                    Name = "<GROUP>Offline Server",
-                    IsSpecial = true
-                });
-
-                finalItems.Add(new ServerInfo
-                {
-                    Name = "Offline Built-In Server",
-                    Category = "OFFLINEOFFLINE",
-                    DiscordPresenceKey = "",
-                    IsSpecial = false,
-                    DistributionUrl = "",
-                    IpAddress = "http://localhost:4416/sbrw/Engine.svc",
-                    Id = "OFFLINE"
-                });
-            }
-
-            //Somewhere here i have to remove duplicates... 
-
-            List<ServerInfo> newFinalItems = new List<ServerInfo>();
-
-            foreach(ServerInfo xServ in finalItems) {
-                if(newFinalItems.FindIndex(i => string.Equals(i.Name, xServ.Name)) == -1) {
-                    newFinalItems.Add(xServ);
-                }
-            }
-
-            serverPick.DataSource = newFinalItems;
+            Log.Debug("Setting server list");
+            finalItems = ServerListUpdater.GetList();
+            serverPick.DataSource = finalItems;
 
             Log.Debug("SERVERLIST: Checking...");
-            if (_serverlistloaded) {
                 Log.Debug("SERVERLIST: Setting first server in list");
                 try {
                     serverPick.SelectedIndex = 1;
@@ -675,7 +556,7 @@ namespace GameLauncher {
                     }
                     Log.Debug("SERVERLIST: All done");
                 }
-            }
+            
 
             Log.Debug("Checking for password");
             if (_settingFile.KeyExists("Password"))
@@ -732,30 +613,45 @@ namespace GameLauncher {
 
             settingsQuality.DataSource = quality;
 
-            String _slresponse2 = String.Empty;
-            try
-            {
-                WebClientWithTimeout wc = new WebClientWithTimeout();
-                _slresponse2 = wc.DownloadString(Self.CDNUrlList);
-            }
-            catch
-            {
-                _slresponse2 = JsonConvert.SerializeObject(new[] {
+            Task.Run(() => {
+                String _slresponse2 = string.Empty;
+                try
+                {
+                    WebClientWithTimeout wc = new WebClientWithTimeout();
+                    _slresponse2 = wc.DownloadString(Self.CDNUrlList);
+                }
+                catch
+                {
+                    _slresponse2 = JsonConvert.SerializeObject(new[] {
                     new CDNObject {
-                        name = "WorldOnlinePL Mirror",
-                        url = "http://145.239.5.103/cdn/gamefiles/1614b/"
+                        name = "[PL] WorldUnited.GG Mirror",
+                        url = "http://cdn.worldunited.gg/nfsw/"
                     }
                 });
-            }
+                }
 
-            List<CDNObject> CDNList = JsonConvert.DeserializeObject<List<CDNObject>>(_slresponse2);
+                List<CDNObject> CDNList = JsonConvert.DeserializeObject<List<CDNObject>>(_slresponse2);
 
-            cdnPick.DisplayMember = "name";
-            cdnPick.DataSource = CDNList;
+                cdnPick.Invoke(new Action(() => 
+                {
+                    cdnPick.DisplayMember = "name";
+                    cdnPick.DataSource = CDNList;
+                }));
+            });
 
             if (_settingFile.KeyExists("TracksHigh"))
             {
-                settingsQuality.SelectedValue = _settingFile.Read("TracksHigh");
+                string selectedTracksHigh = _settingFile.Read("TracksHigh");
+                if(!string.IsNullOrEmpty(selectedTracksHigh))
+                {
+                    settingsQuality.SelectedValue = selectedTracksHigh;
+                } else
+                {
+                    settingsQuality.SelectedIndex = 0;
+                }
+            } else
+            {
+                settingsQuality.SelectedIndex = 0;
             }
 
             Log.Debug("Re-checking InstallationDirectory");
@@ -776,23 +672,6 @@ namespace GameLauncher {
             try {
                 Directory.CreateDirectory(_settingFile.Read("InstallationDirectory"));
                 if (!File.Exists(_settingFile.Read("InstallationDirectory") + "/lightfx.dll")) {
-                    try {
-                        File.WriteAllBytes(_settingFile.Read("InstallationDirectory") + "/lightfx.dll", new WebClientWithTimeout().DownloadData( Self.mainserver + "/files/lightfx.dll"));
-                        /*string tempNameZip = Path.GetTempFileName();
-
-                        File.WriteAllBytes(tempNameZip, ExtractResource.AsByte("GameLauncher.SoapBoxModules.lightfx.zip"));
-
-                        using (ZipArchive archive = ZipFile.OpenRead(tempNameZip)) {
-                            foreach (ZipArchiveEntry entry in archive.Entries) {
-                                string fullName = entry.FullName;
-                                entry.ExtractToFile(Path.Combine(_settingFile.Read("InstallationDirectory"), fullName));
-                            }
-                        }*/
-                    } catch(Exception ex) {
-                        Log.Error(ex.Message);
-                        MessageBox.Show(null, "Failed to fetch 'lightfx.dll' module. Freeroam might not work correctly.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                    }
-
                     Directory.CreateDirectory(_settingFile.Read("InstallationDirectory") + "/modules");
                     File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/udpcrc.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.udpcrc.soapbox.module"));
                     File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/udpcrypt1.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.udpcrypt1.soapbox.module"));
@@ -1173,7 +1052,9 @@ namespace GameLauncher {
                             serverStatusDictionary[_serverInfo.Id] = 1;
                         }
 
-                        var json = JsonConvert.DeserializeObject<GetServerInformation>(e2.Result);
+                        purejson = e2.Result;
+                        json = JsonConvert.DeserializeObject<GetServerInformation>(e2.Result);
+                        Self.rememberjson = e2.Result;
                         try {
                             _realServernameBanner = json.serverName;
                             if (!string.IsNullOrEmpty(json.bannerUrl)) {
@@ -1778,6 +1659,8 @@ namespace GameLauncher {
         }
 
         private void settingsSave_Click(object sender, EventArgs e) {
+
+            //TODO null check
             _settingFile.Write("Language", settingsLanguage.SelectedValue.ToString());
             _settingFile.Write("TracksHigh", settingsQuality.SelectedValue.ToString());
             _settingFile.Write("CDN", ((CDNObject)cdnPick.SelectedItem).url);
@@ -1922,7 +1805,14 @@ namespace GameLauncher {
         }
 
         private void LaunchGame(string userId, string loginToken, string serverIp, Form x) {
-			var oldfilename = _settingFile.Read("InstallationDirectory") + "/nfsw.exe";
+            if (!File.Exists(Path.Combine(_settingFile.Read("InstallationDirectory"), "lightfx.dll"))) {
+                try {
+                    WebClientWithTimeout lightfx = new WebClientWithTimeout();
+                    lightfx.DownloadFile(new Uri(Self.mainserver + "/files/lightfx.dll"), Path.Combine(_settingFile.Read("InstallationDirectory"), "lightfx.dll"));
+                } catch { /* ignored */ }
+            }
+
+            var oldfilename = _settingFile.Read("InstallationDirectory") + "/nfsw.exe";
 
             var args = _serverInfo.Id.ToUpper() + " " + serverIp + " " + loginToken + " " + userId + " -advancedLaunch";
             var psi = new ProcessStartInfo();
@@ -1956,6 +1846,56 @@ namespace GameLauncher {
             }
 
             var nfswProcess = Process.Start(psi);
+
+            //TIMER HERE
+            int secondsToShutDown = (json.secondsToShutDown != 0) ? json.secondsToShutDown : 2*60*60;
+            System.Timers.Timer shutdowntimer = new System.Timers.Timer();
+            shutdowntimer.Elapsed += (x2, y2) => {
+                if(secondsToShutDown == 300) {
+                    Notification.Visible = true;
+                    Notification.BalloonTipIcon = ToolTipIcon.Info;
+                    Notification.BalloonTipTitle = "SpeedBug Fix - " + _realServername;
+                    Notification.BalloonTipText = "Game is going to shut down in 5 minutes. Please restart it manually before the launcher does it.";
+                    Notification.ShowBalloonTip(5000);
+                    Notification.Dispose();
+                }
+
+                if(secondsToShutDown <= 0) {
+                    if (Self.CanDisableGame == true) {
+                        Process[] allOfThem2 = Process.GetProcessesByName("nfsw");
+                        foreach (var oneProcess in allOfThem2)
+                        {
+                            _gameKilledBySpeedBugCheck = true;
+                            Process.GetProcessById(oneProcess.Id).Kill();
+                        }
+                    } else {
+                        secondsToShutDown = 0;
+                    }
+                }
+
+                //change title
+
+                Process[] allOfThem = Process.GetProcessesByName("nfsw");
+                foreach (var oneProcess in allOfThem) {
+                    if (oneProcess.ProcessName == "nfsw") {
+                        long p = oneProcess.MainWindowHandle.ToInt64();
+                        TimeSpan t = TimeSpan.FromSeconds(secondsToShutDown);
+                        string secondsToShutDownNamed = string.Format("{0:D2}:{1:D2}:{2:D2}", t.Hours, t.Minutes, t.Seconds);
+
+                        if (secondsToShutDown == 0) {
+                            secondsToShutDownNamed = "Waiting for event to finish.";
+                        }
+
+                        User32.SetWindowText((IntPtr)p, _realServername + " - Time Remaining: " + secondsToShutDownNamed);
+                    }
+                }
+
+                --secondsToShutDown;
+            };
+
+            shutdowntimer.Interval = 1000;
+            shutdowntimer.Enabled = true;
+
             if (nfswProcess != null) {
                 nfswProcess.EnableRaisingEvents = true;
                 _nfswPid = nfswProcess.Id;
@@ -1963,6 +1903,8 @@ namespace GameLauncher {
                 nfswProcess.Exited += (sender2, e2) => {
                     _nfswPid = 0;
                     var exitCode = nfswProcess.ExitCode;
+
+                    if (_gameKilledBySpeedBugCheck == true) exitCode = 2137;
 
                     if (exitCode == 0) {
                         closebtn_Click(null, null);
@@ -1977,8 +1919,10 @@ namespace GameLauncher {
                             if (exitCode == -1073740940)    errorMsg = "Game Crash: Heap Corruption (0x" + exitCode.ToString("X") + ")";
                             if (exitCode == -1073740791)    errorMsg = "Game Crash: Stack buffer overflow (0x" + exitCode.ToString("X") + ")";
                             if (exitCode == -805306369)     errorMsg = "Game Crash: Application Hang (0x" + exitCode.ToString("X") + ")";
-
+			                if (exitCode == -1073741515)    errorMsg = "Game Crash: Missing dependency files (0x" + exitCode.ToString("X") + ")";
+				
                             if (exitCode == 1)              errorMsg = "You just killed nfsw.exe via Task Manager";
+                            if (exitCode == 2137)           errorMsg = "Launcher killed your game to prevent SpeedBugging.";
 
                             if (exitCode == -3)             errorMsg = "Server were unable to resolve your request";
                             if (exitCode == -4)             errorMsg = "Another instance is already executed";
@@ -2101,15 +2045,13 @@ namespace GameLauncher {
 
                         Notification.ContextMenu = ContextMenu;
                     }
-                }
-                else
-                {
+                } else {
                     MessageBox.Show(null, "Your NFSW.exe is modified. Please re-download the game.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
             }
             catch (Exception ex)
             {
-                MessageBox.Show(null, "Failed to find NFSW.exe. Make sure you have \"Need for Speed™: World\" installed on your PC." + "\n\n" + ex.Message, "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(null, ex.Message, "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
 
@@ -2173,29 +2115,27 @@ namespace GameLauncher {
                 speechFile = "en";
             }
 
-            if (!File.Exists(_settingFile.Read("InstallationDirectory") + "/Sound/Speech/copspeechhdr_" + speechFile + ".big"))
-            {
+            if (!File.Exists(_settingFile.Read("InstallationDirectory") + "/Sound/Speech/copspeechhdr_" + speechFile + ".big")) {
                 playProgressText.Text = "Loading list of files to download...".ToUpper();
 
-                if(!DetectLinux.UnixDetected()) {
-                    Kernel32.GetDiskFreeSpaceEx(_settingFile.Read("InstallationDirectory"), out var lpFreeBytesAvailable, out _, out _);
-                    if (lpFreeBytesAvailable <= 4000000000) {
+                DriveInfo[] allDrives = DriveInfo.GetDrives();
+                foreach (DriveInfo d in allDrives) {
+                    if (d.Name == Path.GetPathRoot(_settingFile.Read("InstallationDirectory"))) {
+                        if (d.TotalFreeSpace <= 4000000000)  {
 
-                        extractingProgress.Value = 100;
-                        extractingProgress.Width = 519;
-                        extractingProgress.Image = Properties.Resources.warningprogress;
-                        extractingProgress.ProgressColor = Color.Orange;
+                            extractingProgress.Value = 100;
+                            extractingProgress.Width = 519;
+                            extractingProgress.Image = Properties.Resources.warningprogress;
+                            extractingProgress.ProgressColor = Color.Orange;
 
-                        playProgressText.Text = "Please make sure you have at least 4GB free space on hard drive.".ToUpper();
+                            playProgressText.Text = "Please make sure you have at least 4GB free space on hard drive.".ToUpper();
 
-                        TaskbarProgress.SetState(Handle, TaskbarProgress.TaskbarStates.Paused);
-                        TaskbarProgress.SetValue(Handle, 100, 100);
-                    } else {
-                        DownloadCoreFiles();
+                            TaskbarProgress.SetState(Handle, TaskbarProgress.TaskbarStates.Paused);
+                            TaskbarProgress.SetValue(Handle, 100, 100);
+                        } else {
+                            DownloadCoreFiles();
+                        }
                     }
-                } else {
-                    //TODO: Linux check for free disk space
-                    DownloadCoreFiles();
                 }
             } else {
 				OnDownloadFinished();
@@ -2324,7 +2264,7 @@ namespace GameLauncher {
             }
             catch (Exception e)
             {
-                Console.WriteLine(e.Message);
+                MessageBox.Show(e.Message + e.StackTrace);
                 ModManager.ResetModDat(_settingFile.Read("InstallationDirectory"));
                 return false;
             }
@@ -2505,17 +2445,25 @@ namespace GameLauncher {
 
         int rememberit;
         private void randomServer_Click(object sender, EventArgs e) {
-            int total = (finalItems.Count)-(finalItems.FindAll(i => string.Equals(i.IsSpecial, true)).Count); //Prevent summing GROUPS
-            int randomizer = random.Next(total);
+            try {
+                int total = (finalItems.Count)-(finalItems.FindAll(i => string.Equals(i.IsSpecial, true)).Count); //Prevent summing GROUPS
+                int randomizer = random.Next(total);
 
-            if (finalItems[total].IsSpecial == true) //Prevent picking GROUP as random server
-                randomizer = random.Next(total);
+                if (finalItems[total].IsSpecial == true) //Prevent picking GROUP as random server
+                    randomizer = random.Next(total);
 
-            if (rememberit == randomizer) //Prevent picking same ID as current one
-                randomizer = random.Next(total);
+                if (rememberit == randomizer) //Prevent picking same ID as current one
+                    randomizer = random.Next(total);
 
-            serverPick.SelectedIndex = randomizer;
-            rememberit = randomizer;
+                serverPick.SelectedIndex = randomizer;
+                rememberit = randomizer;
+            } catch {
+                serverPick.SelectedIndex = 2;
+            }
+        }
+
+        private void srvinfo_Click(object sender, EventArgs e) {
+            //new SrvInfo().Show();
         }
     }
 }

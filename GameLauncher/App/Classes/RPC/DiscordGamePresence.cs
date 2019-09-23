@@ -12,7 +12,7 @@ using System.Xml;
 
 namespace GameLauncher.App.Classes.RPC {
     class DiscordGamePresence {
-        public static long RPCstartTimestamp = 0000000000;
+        private static DateTime RPCstartTimestamp;
         public static RichPresence _presence = new RichPresence();
 
         //Some checks
@@ -21,10 +21,6 @@ namespace GameLauncher.App.Classes.RPC {
         private static bool eventTerminatedManually = false;
         private static int EventID;
         private static string carslotsXML = String.Empty;
-
-        public DiscordGamePresence() {
-
-        }
 
         //Some data related, can be touched.
         public static string PersonaId = String.Empty;
@@ -39,28 +35,10 @@ namespace GameLauncher.App.Classes.RPC {
         public static List<string> PersonaIds = new List<string>();
 
         public static void handleGameState(string uri, string serverreply = "", string POST = "", string GET = "") {
+            RPCstartTimestamp = DateTime.Now;
+
             var SBRW_XML = new XmlDocument();
             string[] splitted_uri = uri.Split('/');
-
-            /*if(uri == "/DriverPersona/GetPersonaBaseFromList" && POST != String.Empty) {
-                SBRW_XML.LoadXml(serverreply);
-                String PersonaFriend = SBRW_XML.SelectSingleNode("ArrayOfPersonaBase/PersonaBase/Name").InnerText;
-
-                if(PersonaFriend != PersonaName) { 
-                    var notification = new NotifyIcon()  {
-                        Visible = true,
-                        Icon = System.Drawing.SystemIcons.Information,
-                        BalloonTipIcon = ToolTipIcon.Info,
-                        BalloonTipTitle = "Friend Request - " + serverName,
-                        BalloonTipText = PersonaFriend + " wants to be your friend. Go ingame to accept or decline",
-                    };
-
-                    notification.ShowBalloonTip(5000);
-                    notification.Dispose();
-                }
-            }*/
-
-
 
             if (uri == "/events/gettreasurehunteventsession") {
                 PersonaTreasure = 0;
@@ -143,7 +121,7 @@ namespace GameLauncher.App.Classes.RPC {
                 PersonaAvatarId = (SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText == "26") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText;
                 PersonaId = SBRW_XML.SelectSingleNode("ProfileData/PersonaId").InnerText;
             }
-            if (uri == "/matchmaking/leavelobby") {
+            if (uri == "/matchmaking/leavelobby" || uri == "/matchmaking/declineinvite") {
                 _presence.Details = "Driving " + PersonaCarName;
                 _presence.State = serverName;
                 _presence.Assets = new Assets
@@ -153,19 +131,17 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageText = "In-Freeroam",
                     SmallImageKey = "gamemode_freeroam"
                 };
-
-                _presence.Timestamps = new Timestamps() {
-                    Start = null,
-                    End = null
-                };
-
+                _presence.Timestamps = GetCurrentTimestamp();
                 MainScreen.discordRpcClient.SetPresence(_presence);
 
                 eventTerminatedManually = true;
+                Self.CanDisableGame = true;
             }
 
             //IN LOBBY
             if (uri == "/matchmaking/acceptinvite") {
+                Self.CanDisableGame = false;
+
                 SBRW_XML.LoadXml(serverreply);
                 EventID = Convert.ToInt32(SBRW_XML.SelectSingleNode("LobbyInfo/EventId").InnerText);
 
@@ -183,6 +159,23 @@ namespace GameLauncher.App.Classes.RPC {
                 eventTerminatedManually = false;
             }
 
+            if(uri == "/matchmaking/joinqueueracenow") {
+                _presence.Details = "Searching for event...";
+                _presence.State = serverName;
+                _presence.Assets = new Assets {
+                    LargeImageText = PersonaName + " - Level: " + PersonaLevel,
+                    LargeImageKey = PersonaAvatarId,
+                    SmallImageText = "In-Freeroam",
+                    SmallImageKey = "gamemode_freeroam"
+                };
+                _presence.Timestamps = GetCurrentTimestamp();
+                MainScreen.discordRpcClient.SetPresence(_presence);
+
+                eventTerminatedManually = true;
+            }
+
+            Console.WriteLine(uri);
+
             //IN SAFEHOUSE/FREEROAM
             if (uri == "/DriverPersona/UpdatePersonaPresence") {
                 string UpdatePersonaPresenceParam = GET.Split(';').Last().Split('=').Last();
@@ -190,26 +183,29 @@ namespace GameLauncher.App.Classes.RPC {
                 if(UpdatePersonaPresenceParam == "1") {
                     _presence.Details = "Driving " + PersonaCarName;
                     _presence.Assets.SmallImageText = "In-Freeroam";
+                    _presence.Assets.SmallImageKey = "gamemode_freeroam";
+
+                    Self.CanDisableGame = true;
                 } else {
                     _presence.Details = "In Safehouse";
                     _presence.Assets.SmallImageText = "In-Safehouse";
+                    _presence.Assets.SmallImageKey = "gamemode_safehouse";
+                    Self.CanDisableGame = false;
                 }
 
                 _presence.State = serverName;
                 _presence.Assets.LargeImageText = PersonaName + " - Level: " + PersonaLevel;
                 _presence.Assets.LargeImageKey = PersonaAvatarId;
-                _presence.Assets.SmallImageKey = "gamemode_freeroam";
 
-                _presence.Timestamps = new Timestamps() {
-                    Start = null,
-                    End = null
-                };
+                _presence.Timestamps = GetCurrentTimestamp();
 
                 MainScreen.discordRpcClient.SetPresence(_presence);
             }
 
             //IN EVENT
             if (Regex.Match(uri, "/matchmaking/launchevent").Success) {
+                Self.CanDisableGame = false;
+
                 EventID = Convert.ToInt32(splitted_uri[3]);
 
                 _presence.Details = "In Event: " + EventList.getEventName(EventID);
@@ -251,15 +247,10 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageKey = EventList.getEventType(EventID)
                 };
 
-                _presence.Timestamps = new Timestamps() {
-                    Start = DateTime.UtcNow,
-                    End = null
-                };
+                _presence.Timestamps = GetCurrentTimestamp();
 
                 MainScreen.discordRpcClient.SetPresence(_presence);
             }
-
-
 
             //CARS RELATED
             foreach (var single_personaId in PersonaIds) {
@@ -297,6 +288,11 @@ namespace GameLauncher.App.Classes.RPC {
                     }
                 }
             }
+        }
+
+        public static Timestamps GetCurrentTimestamp()
+        {
+            return Timestamps.Now;
         }
     }
 }

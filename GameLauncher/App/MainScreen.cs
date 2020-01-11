@@ -32,6 +32,9 @@ using Microsoft.WindowsAPICodePack.Dialogs;
 using System.Threading.Tasks;
 using System.Collections.Concurrent;
 using System.Management;
+using GameLauncher.App.Classes.ModNetReloaded;
+using GameLauncher.App.Classes.HashPassword;
+using System.Security;
 
 namespace GameLauncher {
     public sealed partial class MainScreen : Form {
@@ -42,7 +45,7 @@ namespace GameLauncher {
         private bool _useSavedPassword;
         private bool _skipServerTrigger;
         private bool _ticketRequired;
-        private bool _serverlistloaded;
+        private bool _serverlistloaded = false;
         private bool _windowMoved;
         private bool _playenabled;
         private bool _loggedIn;
@@ -52,15 +55,12 @@ namespace GameLauncher {
         private bool _modernAuthSupport = false;
         private bool _gameKilledBySpeedBugCheck = false;
 
-        private bool _disabledModNet;
+        private bool _disableChecks;
 
         private int _lastSelectedServerId;
         private int _nfswPid;
         private Thread _nfswstarted;
-        private string _passwordHash;
-        private string _slresponse = "";
 
-        private int _errorcode;
 
         private DateTime _downloadStartTime;
         private readonly Downloader _downloader;
@@ -68,7 +68,6 @@ namespace GameLauncher {
         private string _loginToken = "";
         private string _userId = "";
         private string _serverIp = "";
-        private readonly string _serverCacheKey = "02032019"; // Try to guess that now :)
         private string _langInfo;
         private string _newGameFilesPath;
         private readonly float _dpiDefaultScale = 96f;
@@ -88,6 +87,9 @@ namespace GameLauncher {
         private string _realServernameBanner;
         private string _OS;
 
+        int CountFiles = 0;
+        int CountFilesTotal = 0;
+
         private Point _startPoint = new Point(38, 144);
         private Point _endPoint = new Point(562, 144);
 
@@ -102,6 +104,14 @@ namespace GameLauncher {
         Dictionary<string, int> serverStatusDictionary = new Dictionary<string, int>();
 
         Form _splashscreen;
+
+        //VerifyHash
+        string[][] scannedHashes;
+        public int filesToScan;
+        public int badFiles;
+        public int totalFilesScanned;
+        public int redownloadedCount;
+        public List<string> invalidFileList = new List<string>();
 
         private static Random random = new Random();
 		public static string RandomString(int length) {
@@ -192,9 +202,7 @@ namespace GameLauncher {
                 ApplyEmbeddedFonts();
             }
 
-            //SETTINGS
-            _disabledModNet = (_settingFile.KeyExists("ModNetDisabled") && _settingFile.Read("ModNetDisabled") == "1") ? true : false;
-            //SETTINGS
+            _disableChecks = (_settingFile.KeyExists("DisableVerifyHash") && _settingFile.Read("DisableVerifyHash") == "1") ? true : false;
 
             Log.Debug("Setting launcher location");
             if (_settingFile.KeyExists("LauncherPosX") || _settingFile.KeyExists("LauncherPosY")) {
@@ -257,7 +265,6 @@ namespace GameLauncher {
 
             addServer.Click += new EventHandler(addServer_Click);
             launcherStatusDesc.Click += new EventHandler(OpenDebugWindow);
-            showmap.Click += new EventHandler(OpenMapHandler);
 
             email.KeyUp += new KeyEventHandler(Loginbuttonenabler);
             email.KeyDown += new KeyEventHandler(LoginEnter);
@@ -385,22 +392,8 @@ namespace GameLauncher {
             Log.Debug("Setting ServerStatusBar");
             ServerStatusBar(_colorLoading, _startPoint, _endPoint);
 
-            Log.Debug("Checking internet connection");
-
-            new Thread(() => {
-                if (Self.CheckForInternetConnection() == false && !DetectLinux.WineDetected()) {
-                    if (_splashscreen != null) _splashscreen.Hide();
-                    Log.Error("Failed to connect to internet. Please check if your firewall is not blocking launcher.");
-                    MessageBox.Show(null, "Failed to connect to internet. Please check if your firewall is not blocking launcher.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                }
-            }).Start();
-
-            if(_disabledModNet == false) { 
-                Log.Debug("Loading ModManager Cache");
-                ModManager.LoadModCache();
-            } else {
-                ModManager.ResetModDat(_settingFile.Read("InstallationDirectory"));
-            }
+            Log.Debug("Loading ModManager Cache");
+            ModManager.LoadModCache();
         }
 
         private void comboBox1_DrawItem(object sender, DrawItemEventArgs e) {
@@ -484,10 +477,6 @@ namespace GameLauncher {
             translatedBy.Text = "";
             ContextMenu = new ContextMenu();
 
-            ContextMenu.MenuItems.Add(new MenuItem("About", (x,y) => {
-                About a = new About();
-                a.Show();
-            }));
             ContextMenu.MenuItems.Add(new MenuItem("Settings", settingsButton_Click));
             ContextMenu.MenuItems.Add(new MenuItem("Add Server", addServer_Click));
             ContextMenu.MenuItems.Add("-");
@@ -625,7 +614,7 @@ namespace GameLauncher {
                     _slresponse2 = JsonConvert.SerializeObject(new[] {
                     new CDNObject {
                         name = "[PL] WorldUnited.GG Mirror",
-                        url = "http://cdn.worldunited.gg/nfsw/"
+                        url = "http://cdn.worldunited.gg/gamefiles/packed/"
                     }
                 });
                 }
@@ -667,24 +656,7 @@ namespace GameLauncher {
                 }
             }
 
-            //Soapbox Modules (without them Freeroam might fail)
-            Log.Debug("Installing modules");
-            try {
-                Directory.CreateDirectory(_settingFile.Read("InstallationDirectory"));
-                if (!File.Exists(_settingFile.Read("InstallationDirectory") + "/lightfx.dll")) {
-                    Directory.CreateDirectory(_settingFile.Read("InstallationDirectory") + "/modules");
-                    File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/udpcrc.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.udpcrc.soapbox.module"));
-                    File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/udpcrypt1.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.udpcrypt1.soapbox.module"));
-                    File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/udpcrypt2.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.udpcrypt2.soapbox.module"));
-                    File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/modules/xmppsubject.soapbox.module", ExtractResource.AsString("GameLauncher.SoapBoxModules.xmppsubject.soapbox.module"));
-                }
-            } catch (Exception ex) {
-                Log.Error(ex.Message);
-                MessageBox.Show(null, ex.Message, "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                closebtn_Click(null, null);
-            }
-
-            modNetCheckbox.Checked = _disabledModNet;
+            vfilesCheck.Checked = _disableChecks;
 
             Log.Debug("Hiding RegisterFormElements"); RegisterFormElements(false);
             Log.Debug("Hiding SettingsFormElements"); SettingsFormElements(false);
@@ -734,6 +706,18 @@ namespace GameLauncher {
             this.BringToFront();
             Log.Debug("Checking for update");
             new LauncherUpdateCheck(launcherIconStatus, launcherStatusText, launcherStatusDesc).checkAvailability();
+
+            Self.gamedir = _settingFile.Read("InstallationDirectory");
+
+            if(File.Exists(_settingFile.Read("InstallationDirectory") + "/profwords") || File.Exists(_settingFile.Read("InstallationDirectory") + "/profwords_dis")) { 
+                try { 
+                    wordFilterCheck.Checked = File.Exists(_settingFile.Read("InstallationDirectory") + "/profwords") ? false : true;
+                } catch {
+                    wordFilterCheck.Checked = false;
+                }
+            } else {
+                wordFilterCheck.Enabled = false;
+            }
         }
 
         private void closebtn_Click(object sender, EventArgs e) {
@@ -771,19 +755,16 @@ namespace GameLauncher {
 
             ServerProxy.Instance.Stop();
 
-            //Dirty way to terminate application (sometimes Application.Exit() didn't really quitted, was still running in background)
-            if (DetectLinux.WineDetected())
-            {
-                Close();
-                _downloader.Stop();
-                Application.Exit();
-                Application.ExitThread();
-                Environment.Exit(Environment.ExitCode);
+            File.WriteAllLines("invalidfiles.dat", invalidFileList);
+
+            Notification.Dispose();
+
+            Process[] allOfThem2 = Process.GetProcessesByName("GameLauncher");
+            foreach (var oneProcess in allOfThem2) {
+                Process.GetProcessById(oneProcess.Id).Kill();
             }
-            else
-            {
-                Process.GetProcessById(Process.GetCurrentProcess().Id).Kill();
-            }
+
+            Process.GetProcessById(Process.GetCurrentProcess().Id).Kill();
         }
 
         private void addServer_Click(object sender, EventArgs e)
@@ -888,6 +869,8 @@ namespace GameLauncher {
 
             Tokens.IPAddress = _serverInfo.IpAddress;
             Tokens.ServerName = _serverInfo.Name;
+
+            Self.userAgent = (_serverInfo.forceUserAgent == null) ? null : _serverInfo.forceUserAgent;
 
             if (_modernAuthSupport == false) {
                 //ClassicAuth sends password in SHA1
@@ -1262,6 +1245,8 @@ namespace GameLauncher {
             Log.Debug("Applying AkrobatSemiBold mainScreen to settingsSave");               settingsSave.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
 
             Log.Debug("Applying AkrobatSemiBold mainScreen to settingsGamePathText");       settingsGamePathText.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
+            Log.Debug("Applying AkrobatSemiBold mainScreen to wordFilterCheck");            wordFilterCheck.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
+            Log.Debug("Applying AkrobatSemiBold mainScreen to vFilesCheck");                vfilesCheck.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
             Log.Debug("Applying AkrobatSemiBold mainScreen to settingsGameFilesCurrent");   settingsGameFilesCurrent.Font = new Font(AkrobatSemiBold, 8f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
 
             Log.Debug("Applying AkrobatSemiBold mainScreen to logoutButton");               logoutButton.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
@@ -1272,12 +1257,10 @@ namespace GameLauncher {
             Log.Debug("Applying AkrobatRegular mainScreen to registerTicket");              registerTicket.Font = new Font(AkrobatRegular, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Regular);
 
             Log.Debug("Applying AkrobatSemiBold mainScreen to registerButton");             registerButton.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
+            Log.Debug("Applying AkrobatSemiBold mainScreen to registerButton");             registerButton.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
             Log.Debug("Applying AkrobatSemiBold mainScreen to registerText");               registerText.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
 
             Log.Debug("Applying cdnText mainScreen to settingsGamePathText");               cdnText.Font = new Font(AkrobatSemiBold, 10f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
-
-            Log.Debug("Applying modNetCheckbox mainScreen to rememberMe");                  modNetCheckbox.Font = new Font(AkrobatSemiBold, 9f * _dpiDefaultScale / CreateGraphics().DpiX, FontStyle.Bold);
-
         }
 
         private void registerText_LinkClicked(object sender, EventArgs e)
@@ -1372,7 +1355,6 @@ namespace GameLauncher {
             extractingProgress.Visible = hideElements;
             addServer.Visible = hideElements;
             //allowedCountriesLabel.Visible = hideElements;
-            showmap.Visible = hideElements;
             serverPick.Enabled = true;
             randomServer.Visible = hideElements;
             randomServer.Enabled = true;
@@ -1391,7 +1373,6 @@ namespace GameLauncher {
             extractingProgress.Visible = hideElements;
             playProgress.Visible = hideElements;
             playProgressText.Visible = hideElements;
-            showmap.Visible = hideElements;
 
             ServerStatusText.Visible = hideElements;
             ServerStatusIcon.Visible = hideElements;
@@ -1664,9 +1645,6 @@ namespace GameLauncher {
             _settingFile.Write("Language", settingsLanguage.SelectedValue.ToString());
             _settingFile.Write("TracksHigh", settingsQuality.SelectedValue.ToString());
             _settingFile.Write("CDN", ((CDNObject)cdnPick.SelectedItem).url);
-            _settingFile.Write("ModNetDisabled", (modNetCheckbox.Checked == true) ? "1" : "0");
-
-            _disabledModNet = modNetCheckbox.Checked;
 
             var userSettingsXml = new XmlDocument();
 
@@ -1717,8 +1695,23 @@ namespace GameLauncher {
                 _restartRequired = true;
             }
 
+            String disableCheck = (vfilesCheck.Checked == true) ? "1" : "0";
+
+            if (_settingFile.Read("DisableVerifyHash") != disableCheck) {
+                _settingFile.Write("DisableVerifyHash", (vfilesCheck.Checked == true) ? "1" : "0");
+                _restartRequired = true;
+            }
+
+
             if (_restartRequired) {
                 MessageBox.Show(null, "In order to see settings changes, you need to restart launcher manually.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+
+            //Delete/Enable profwords filter here
+            if (wordFilterCheck.Checked) {
+                if (File.Exists(_settingFile.Read("InstallationDirectory") + "/profwords")) File.Move(_settingFile.Read("InstallationDirectory") + "/profwords", _settingFile.Read("InstallationDirectory") + "/profwords_dis");
+            } else {
+                if (File.Exists(_settingFile.Read("InstallationDirectory") + "/profwords_dis")) File.Move(_settingFile.Read("InstallationDirectory") + "/profwords_dis", _settingFile.Read("InstallationDirectory") + "/profwords");
             }
 
             SettingsFormElements(false);
@@ -1765,10 +1758,11 @@ namespace GameLauncher {
             settingsGameFiles.Visible = hideElements;
             settingsGameFilesCurrent.Visible = hideElements;
             settingsGamePathText.Visible = hideElements;
-            modNetCheckbox.Visible = hideElements;
+            wordFilterCheck.Visible = hideElements;
+            vfilesCheck.Visible = hideElements;
         }
 
-        private void StartGame(string userId, string loginToken, string serverIp, Form x) {
+        private void StartGame(string userId, string loginToken) {
             if(DetectLinux.UnixDetected()) { 
                 if (File.Exists("wine.tar.gz") && !Directory.Exists("wine")) {
                     Directory.CreateDirectory("wine");
@@ -1793,7 +1787,7 @@ namespace GameLauncher {
 
             _presenceImageKey = _serverInfo.DiscordPresenceKey;
             _presence.State = _realServername;
-            _presence.Details = "Loading game...";
+            _presence.Details = "In-Game";
             _presence.Assets = new Assets
             {
                 LargeImageText = "Need for Speed: World",
@@ -1805,16 +1799,9 @@ namespace GameLauncher {
         }
 
         private void LaunchGame(string userId, string loginToken, string serverIp, Form x) {
-            if (!File.Exists(Path.Combine(_settingFile.Read("InstallationDirectory"), "lightfx.dll"))) {
-                try {
-                    WebClientWithTimeout lightfx = new WebClientWithTimeout();
-                    lightfx.DownloadFile(new Uri(Self.mainserver + "/files/lightfx.dll"), Path.Combine(_settingFile.Read("InstallationDirectory"), "lightfx.dll"));
-                } catch { /* ignored */ }
-            }
-
             var oldfilename = _settingFile.Read("InstallationDirectory") + "/nfsw.exe";
 
-            var args = _serverInfo.Id.ToUpper() + " " + serverIp + " " + loginToken + " " + userId + " -advancedLaunch";
+            var args = _serverInfo.Id.ToUpper() + " " + serverIp + " " + loginToken + " " + userId;
             var psi = new ProcessStartInfo();
 
             if(DetectLinux.UnixDetected()) { 
@@ -1822,6 +1809,7 @@ namespace GameLauncher {
             }
             
             if (!DetectLinux.UnixDetected()) {
+                psi.WorkingDirectory = _settingFile.Read("InstallationDirectory");
                 psi.FileName = oldfilename;
                 psi.Arguments = args;
             } else {
@@ -1846,6 +1834,8 @@ namespace GameLauncher {
             }
 
             var nfswProcess = Process.Start(psi);
+            nfswProcess.PriorityClass = ProcessPriorityClass.AboveNormal;
+            AntiCheat.process_id = nfswProcess.Id;
 
             //TIMER HERE
             int secondsToShutDown = (json.secondsToShutDown != 0) ? json.secondsToShutDown : 2*60*60;
@@ -1886,7 +1876,7 @@ namespace GameLauncher {
                             secondsToShutDownNamed = "Waiting for event to finish.";
                         }
 
-                        User32.SetWindowText((IntPtr)p, _realServername + " - Time Remaining: " + secondsToShutDownNamed);
+                        User32.SetWindowText((IntPtr)p, "[" + secondsToShutDownNamed + "] " + _realServername);
                     }
                 }
 
@@ -1895,6 +1885,7 @@ namespace GameLauncher {
 
             shutdowntimer.Interval = 1000;
             shutdowntimer.Enabled = true;
+            
 
             if (nfswProcess != null) {
                 nfswProcess.EnableRaisingEvents = true;
@@ -1919,15 +1910,17 @@ namespace GameLauncher {
                             if (exitCode == -1073740940)    errorMsg = "Game Crash: Heap Corruption (0x" + exitCode.ToString("X") + ")";
                             if (exitCode == -1073740791)    errorMsg = "Game Crash: Stack buffer overflow (0x" + exitCode.ToString("X") + ")";
                             if (exitCode == -805306369)     errorMsg = "Game Crash: Application Hang (0x" + exitCode.ToString("X") + ")";
-			                if (exitCode == -1073741515)    errorMsg = "Game Crash: Missing dependency files (0x" + exitCode.ToString("X") + ")";
-				
+                            if (exitCode == -1073741515)    errorMsg = "Game Crash: Missing dependency files (0x" + exitCode.ToString("X") + ")";
+                            if (exitCode == -1073740972)    errorMsg = "Game Crash: Debugger crash (0x" + exitCode.ToString("X") + ")";
+                            if (exitCode == -1073741676)    errorMsg = "Game Crash: Division by Zero (0x" + exitCode.ToString("X") + ")";
+
                             if (exitCode == 1)              errorMsg = "You just killed nfsw.exe via Task Manager";
                             if (exitCode == 2137)           errorMsg = "Launcher killed your game to prevent SpeedBugging.";
 
                             if (exitCode == -3)             errorMsg = "Server were unable to resolve your request";
                             if (exitCode == -4)             errorMsg = "Another instance is already executed";
                             if (exitCode == -5)             errorMsg = "DirectX Device was not found. Please install GPU Drivers before playing";
-                            if (exitCode == -6)             errorMsg = "Server was unable to login via 'GetPermanentSession'";
+                            if (exitCode == -6)             errorMsg = "Server was unable to resolve your request";
 
                             playProgressText.Text = errorMsg.ToUpper();
                             playProgress.Value = 100;
@@ -1941,14 +1934,8 @@ namespace GameLauncher {
 
                             _nfswstarted.Abort();
 
-                            var errorReply = MessageBox.Show(null,
-                                errorMsg + "\nWould you like to restart the game?",
-                                "GameLauncher", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
-                            if (errorReply == DialogResult.No) {
-                                closebtn_Click(null, null);
-                            } else {
-                                Self.Restart();
-                            }
+                            MessageBox.Show(null, errorMsg, "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            this.closebtn_Click(null, null);
                         }));
                     }
                 };
@@ -1965,39 +1952,286 @@ namespace GameLauncher {
                 return;
             }
 
-            playButton.BackgroundImage = Properties.Resources.playbutton;
+            ModManager.ResetModDat(_settingFile.Read("InstallationDirectory"));
 
-            if (_disabledModNet == false) {
-                Log.Debug("Installing ModNet");
-                try {
-                    Directory.CreateDirectory(_settingFile.Read("InstallationDirectory"));
-                    if (!File.Exists(_settingFile.Read("InstallationDirectory") + "/dinput8.dll")) {
-                        File.WriteAllBytes(_settingFile.Read("InstallationDirectory") + "/dinput8.dll",
-                            ExtractResource.AsByte("GameLauncher.SoapBoxModules.dinput8.dll"));
-                        Directory.CreateDirectory(_settingFile.Read("InstallationDirectory") + "/scripts");
-                        File.WriteAllText(_settingFile.Read("InstallationDirectory") + "/scripts/global.ini",
-                            ExtractResource.AsString("GameLauncher.SoapBoxModules.global.ini"));
-                        File.WriteAllBytes(_settingFile.Read("InstallationDirectory") + "/ModManager.asi",
-                            ExtractResource.AsByte("GameLauncher.SoapBoxModules.ModManager.dll"));
+            if (!Directory.Exists(_settingFile.Read("InstallationDirectory") + "/modules")) Directory.CreateDirectory(_settingFile.Read("InstallationDirectory") + "/modules");
+            if (!Directory.Exists(_settingFile.Read("InstallationDirectory") + "/scripts")) Directory.CreateDirectory(_settingFile.Read("InstallationDirectory") + "/scripts");
+            String[] GlobalFiles            = new string[] { "dinput8.dll", "global.ini" };
+            String[] ModNetReloadedFiles    = new string[] { "7z.dll", "PocoFoundation.dll", "PocoNet.dll", "ModLoader.asi" };
+            String[] ModNetLegacyFiles = new string[] { "modules/udpcrc.soapbox.module", "modules/udpcrypt1.soapbox.module", "modules/udpcrypt2.soapbox.module", "modules/xmppsubject.soapbox.module",
+                    "scripts/global.ini", "lightfx.dll", "ModManager.asi", "global.ini" };
+
+            String[] RemoveAllFiles = GlobalFiles.Concat(ModNetReloadedFiles).Concat(ModNetLegacyFiles).ToArray();
+
+            foreach (string file in RemoveAllFiles) {
+                if(File.Exists(Path.Combine(_settingFile.Read("InstallationDirectory"), file))) { 
+                    try {
+                        File.Delete(Path.Combine(_settingFile.Read("InstallationDirectory"), file));
+                    } catch {
+                        MessageBox.Show($"File {file} cannot be deleted.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                     }
-                } catch (Exception) { }
-
-                if (_serverInfo.DistributionUrl != "" && _serverInfo.Id != "nfsw") {
-                    DownloadMods(_serverInfo.Id);
-                } else {
-                    ModManager.ResetModDat(_settingFile.Read("InstallationDirectory"));
                 }
-            } else {
-                try {
-                    File.Delete(_settingFile.Read("InstallationDirectory") + "/dinput8.dll");
-                    File.Delete(_settingFile.Read("InstallationDirectory") + "/ModManager.asi");
-                    File.Delete(_settingFile.Read("InstallationDirectory") + "/scripts/global.ini");
-                }
-                catch (Exception) { }
             }
 
-            try
-            {
+            playButton.BackgroundImage = Properties.Resources.playbutton;
+
+            Log.Debug("Installing ModNet");
+            playProgressText.Text = ("Detecting ModNetSupport for " + _realServernameBanner).ToUpper();
+            String jsonModNet = ModNetReloaded.ModNetSupported(_serverIp);
+
+            if (jsonModNet != String.Empty) {
+                playProgressText.Text = "ModNetReloaded support detected, downloading required files...".ToUpper();
+
+                try {
+                    string[] newFiles = GlobalFiles.Concat(ModNetReloadedFiles).ToArray();
+                    WebClientWithTimeout newModNetFilesDownload = new WebClientWithTimeout();
+                    foreach(string file in newFiles) {
+                        playProgressText.Text = ("Fetching ModNetReloaded Files: " + file).ToUpper();
+                        Application.DoEvents();
+                        newModNetFilesDownload.DownloadFile("https://cdn.soapboxrace.world/modules/" + file, _settingFile.Read("InstallationDirectory") + "/" + file);
+                    }
+
+                    try  {
+                        newModNetFilesDownload.DownloadFile("https://cdn.worldunited.gg/legacy_modnet/global.ini", _settingFile.Read("InstallationDirectory") + "/global.ini");
+                    } catch { }
+
+                    //get files now
+                    MainJson json2 = JsonConvert.DeserializeObject<MainJson>(jsonModNet);
+
+                    //get new index
+                    Uri newIndexFile = new Uri(json2.basePath + "/index.json");
+                    String jsonindex = new WebClientWithTimeout().DownloadString(newIndexFile);
+
+                    IndexJson json3 = JsonConvert.DeserializeObject<IndexJson>(jsonindex);
+
+                    CountFilesTotal = json3.entries.Count;
+
+                    String path = Path.Combine(_settingFile.Read("InstallationDirectory"), "MODS", MDFive.HashPassword(json2.serverID).ToLower());
+                    if(!Directory.Exists(path)) Directory.CreateDirectory(path);
+
+                    foreach (IndexJsonEntry modfile in json3.entries) {
+                        if (SHA.HashFile(path + "/" + modfile.Name).ToLower() != modfile.Checksum) {
+                            WebClientWithTimeout client2 = new WebClientWithTimeout();
+                            client2.DownloadFileAsync(new Uri(json2.basePath + "/" + modfile.Name), path + "/" + modfile.Name);
+
+                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                            client2.DownloadFileCompleted += (test, stuff) => { 
+                                if(SHA.HashFile(path + "/" + modfile.Name).ToLower() == modfile.Checksum) {
+                                    CountFiles++;
+
+                                    if(CountFiles == CountFilesTotal) {
+                                        LaunchGame();
+                                    }
+                                } else {
+                                    File.Delete(path + "/" + modfile.Name);
+                                    Console.WriteLine(modfile.Name + " must be removed.");
+                                    playButton_Click(sender, e);
+                                }
+                            };
+                        } else {
+                            CountFiles++;
+
+                            if (CountFiles == CountFilesTotal) {
+                                LaunchGame();
+                            }
+                        }
+                    }
+                } catch(Exception ex) {
+                    MessageBox.Show(ex.Message);
+                }
+            } else {
+                string[] newFiles = GlobalFiles.Concat(ModNetLegacyFiles).ToArray();
+                WebClientWithTimeout newModNetFilesDownload = new WebClientWithTimeout();
+                foreach (string file in newFiles) {
+                    playProgressText.Text = ("Fetching ModNetLegacy Files: " + file).ToUpper();
+                    Application.DoEvents();
+                    newModNetFilesDownload.DownloadFile("http://cdn.worldunited.gg/legacy_modnet/" + file, _settingFile.Read("InstallationDirectory") + "/" + file);
+                }
+
+                if (json.modsUrl != null) {
+                    playProgressText.Text = "Electron support detected, checking mods...".ToUpper();
+
+                    Uri newIndexFile = new Uri(json.modsUrl + "/index.json");
+                    String jsonindex = new WebClientWithTimeout().DownloadString(newIndexFile);
+                    List<ElectronIndex> json3 = JsonConvert.DeserializeObject<List<ElectronIndex>>(jsonindex);
+
+                    CountFilesTotal = json3.Count;
+
+                    String electronpath = (new Uri(_serverIp).Host).Replace(".", "-");
+                    String path = Path.Combine(_settingFile.Read("InstallationDirectory"), "MODS", electronpath);
+                    if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+
+                    File.WriteAllText(path + ".json", jsonindex);
+
+                    //Lets save modmanager.dat file first.
+
+                    using (var fs = new FileStream(Path.Combine(_settingFile.Read("InstallationDirectory"), "ModManager.dat"), FileMode.Create))
+                    using (var bw = new BinaryWriter(fs)) {
+                        bw.Write(json3.Count);
+
+                        foreach (ElectronIndex file in json3) {
+                            var originalPath = Path.Combine(_settingFile.Read("InstallationDirectory"), file.file).Replace("/", "\\").ToUpper();
+                            var modPath = Path.Combine(path, file.file).Replace("/", "\\").ToUpper();
+
+                            bw.Write(originalPath.Length);
+                            bw.Write(originalPath.ToCharArray());
+                            bw.Write(modPath.Length);
+                            bw.Write(modPath.ToCharArray());
+                        }
+                    }
+
+                    foreach (ElectronIndex modfile in json3) {
+                        String directorycreate = Path.GetDirectoryName(path + "/" + modfile.file);
+                        Directory.CreateDirectory(directorycreate);
+
+                        if (ElectronModNet.calculateHash(path + "/" + modfile.file) != modfile.hash) {
+                            WebClientWithTimeout client2 = new WebClientWithTimeout();
+                            client2.DownloadFileAsync(new Uri(json.modsUrl + "/" + modfile.file), path + "/" + modfile.file);
+
+                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                            client2.DownloadFileCompleted += (test, stuff) => {
+                                if (ElectronModNet.calculateHash(path + "/" + modfile.file) == modfile.hash) {
+                                    CountFiles++;
+
+                                    if (CountFiles == CountFilesTotal) {
+                                        LaunchGame();
+                                    }
+                                } else {
+                                    File.Delete(path + "/" + modfile.file);
+                                    playButton_Click(sender, e);
+                                }
+                            };
+                        } else {
+                            CountFiles++;
+
+                            if (CountFiles == CountFilesTotal) {
+                                LaunchGame();
+                            }
+                        }
+                    }
+
+                } else if(json.rwacallow == true) {
+                    playProgressText.Text = "RWAC support detected, checking mods...".ToUpper();
+
+                    //First lets assume new path for RWAC Mods
+                    String rwacpath = MDFive.HashPassword(new Uri(_serverIp).Host);
+                    String path = Path.Combine(_settingFile.Read("InstallationDirectory"), "MODS", rwacpath);
+
+                    //Then, lets fetch its XML File
+                    Uri rwac_wev2 = new Uri(json.homePageUrl + "/rwac/fileschecker_sbrw.xml");
+                    String getcontent = new WebClient().DownloadString(rwac_wev2);
+
+                    playProgressText.Text = "Got files for RWAC... downloading...".ToUpper();
+
+                    XmlDocument xmlDoc = new XmlDocument();
+                    xmlDoc.LoadXml(getcontent);
+                    var nodes = xmlDoc.SelectNodes("rwac/files/file");
+
+                    CountFilesTotal = nodes.Count;
+
+                    //ModManager.dat
+                    using (var fs = new FileStream(Path.Combine(_settingFile.Read("InstallationDirectory"), "ModManager.dat"), FileMode.Create))
+                    using (var bw = new BinaryWriter(fs)) {
+                        bw.Write(nodes.Count);
+
+                        foreach (XmlNode files in nodes) {
+                            string realfilepath = Path.Combine(files.Attributes["path"].Value, files.Attributes["name"].Value);
+
+                            var originalPath = Path.Combine(_settingFile.Read("InstallationDirectory"), realfilepath).Replace("/", "\\").ToUpper();
+                            var modPath = Path.Combine(path, realfilepath).Replace("/", "\\").ToUpper();
+
+                            bw.Write(originalPath.Length);
+                            bw.Write(originalPath.ToCharArray());
+                            bw.Write(modPath.Length);
+                            bw.Write(modPath.ToCharArray());
+                        }
+                    }
+
+                        foreach (XmlNode files in nodes) {
+                            //if(!(files.Attributes["name"].Value).Contains(".dll") && !(files.Attributes["name"].Value).Contains(".exe")) {
+                                string realfilepath = Path.Combine(files.Attributes["path"].Value, files.Attributes["name"].Value);
+                                String directorycreate = Path.GetDirectoryName(path + "/" + realfilepath);
+
+                                Directory.CreateDirectory(directorycreate);
+                                if(files.Attributes["download"].Value != String.Empty) { 
+                                    if (MDFive.HashFile(path + "/" + realfilepath).ToLower() != files.InnerText) {
+                                        WebClientWithTimeout client2 = new WebClientWithTimeout();
+                                        client2.DownloadFileAsync(new Uri(files.Attributes["download"].Value), path + "/" + realfilepath);
+
+                                        client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                                        client2.DownloadFileCompleted += (test, stuff) => {
+                                            if (MDFive.HashFile(path + "/" + realfilepath).ToLower() == files.InnerText) {
+                                                CountFiles++;
+
+                                                if (CountFiles == CountFilesTotal) {
+                                                    LaunchGame(); 
+                                                }
+                                            } else {
+                                                String xddd = "Corrupted file found: " + realfilepath;
+                                                xddd += "\nGot: " + MDFive.HashFile(path + "/" + realfilepath);
+                                                xddd += "\nExpected: " + files.InnerText;
+
+                                                MessageBox.Show(xddd);
+                                                File.Delete(path + "/" + realfilepath);
+                                                playButton_Click(sender, e);
+                                            }
+                                        };
+                                    } else {
+                                        CountFiles++;
+
+                                        if (CountFiles == CountFilesTotal) {
+                                            LaunchGame();
+                                        }
+                                    }
+                                } else {
+                                    CountFiles++;
+
+                                    if (CountFiles == CountFilesTotal) {
+                                        LaunchGame();
+                                    }
+                                }
+                            //} else {
+                            //    CountFiles++;
+
+                            //    if (CountFiles == CountFilesTotal) {
+                            //        LaunchGame();
+                            //    }
+                            //}
+                    }
+                } else { 
+                    playProgressText.Text = "LegacyModNet support detected, checking mods...".ToUpper();
+
+                    if (_serverInfo.DistributionUrl != "" && _serverInfo.Id != "nfsw") {
+                        DownloadMods(_serverInfo.Id);
+                    }
+
+                    LaunchGame();
+                }
+            }         
+        }
+
+        void client_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e) {
+            this.BeginInvoke((MethodInvoker)delegate {
+                double bytesIn = double.Parse(e.BytesReceived.ToString());
+                double totalBytes = double.Parse(e.TotalBytesToReceive.ToString());
+                double percentage = bytesIn / totalBytes * 100;
+                playProgressText.Text = ("Downloaded " + FormatFileSize(e.BytesReceived) + " of " + FormatFileSize(e.TotalBytesToReceive)).ToUpper();
+
+                extractingProgress.Value = Convert.ToInt32(Decimal.Divide(CountFiles, CountFilesTotal) * 100);
+                extractingProgress.Width = Convert.ToInt32(Decimal.Divide(CountFiles, CountFilesTotal) * 519);
+            });
+        }
+
+        //Launch game
+        public void LaunchGame() {
+            if (_serverInfo.DiscordAppId != null) {
+                discordRpcClient.Dispose();
+                discordRpcClient = null;
+                discordRpcClient = new DiscordRpcClient(_serverInfo.DiscordAppId);
+                discordRpcClient.Initialize();
+            }
+
+            try {
                 if (
                     SHA.HashFile(_settingFile.Read("InstallationDirectory") + "/nfsw.exe") == "7C0D6EE08EB1EDA67D5E5087DDA3762182CDE4AC" ||
                     SHA.HashFile(_settingFile.Read("InstallationDirectory") + "/nfsw.exe") == "DB9287FB7B0CDA237A5C3885DD47A9FFDAEE1C19" ||
@@ -2006,18 +2240,17 @@ namespace GameLauncher {
                     ServerProxy.Instance.SetServerUrl(_serverIp);
                     ServerProxy.Instance.SetServerName(_realServername);
 
-                    StartGame(_userId, _loginToken, _serverIp, this);
+                    AntiCheat.user_id = _userId;
+                    AntiCheat.serverip = new Uri(_serverIp).Host;
 
-                    if (_builtinserver)
-                    {
+                    StartGame(_userId, _loginToken);
+
+                    if (_builtinserver) {
                         playProgressText.Text = "Soapbox server launched. Waiting for queries.".ToUpper();
-                    }
-                    else if (!DetectLinux.UnixDetected())
-                    {
+                    } else if (!DetectLinux.UnixDetected()) {
                         var secondsToCloseLauncher = 5;
 
-                        while (secondsToCloseLauncher > 0)
-                        {
+                        while (secondsToCloseLauncher > 0) {
                             playProgressText.Text = string.Format("Loading game. Launcher will minimize in {0} seconds.", secondsToCloseLauncher).ToUpper(); //"LOADING GAME. LAUNCHER WILL MINIMIZE ITSELF IN " + secondsToCloseLauncher + " SECONDS";
                             Delay.WaitSeconds(1);
                             secondsToCloseLauncher--;
@@ -2029,10 +2262,6 @@ namespace GameLauncher {
                         ShowInTaskbar = false;
 
                         ContextMenu = new ContextMenu();
-                        ContextMenu.MenuItems.Add(new MenuItem("About", (x, y) => {
-                            About a = new About();
-                            a.Show();
-                        }));
                         ContextMenu.MenuItems.Add(new MenuItem("Add Server", addServer_Click));
                         ContextMenu.MenuItems.Add("-");
                         ContextMenu.MenuItems.Add(new MenuItem("Close Launcher", (sender2, e2) =>
@@ -2048,9 +2277,7 @@ namespace GameLauncher {
                 } else {
                     MessageBox.Show(null, "Your NFSW.exe is modified. Please re-download the game.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 }
-            }
-            catch (Exception ex)
-            {
+            } catch (Exception ex) {
                 MessageBox.Show(null, ex.Message, "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
         }
@@ -2270,19 +2497,12 @@ namespace GameLauncher {
             }
         }
 
-        private string FormatFileSize(long byteCount)
-        {
-            var numArray = new double[] { 1000000000, 1000000, 1000, 0 };
-            var strArrays = new[] { "GB", "MB", "KB", "Bytes" };
-            for (var i = 0; i < numArray.Length; i++)
-            {
-                if (byteCount >= numArray[i])
-                {
-                    return string.Concat($"{byteCount / numArray[i]:0.00} ", strArrays[i]);
-                }
-            }
-
-            return "0 Bytes";
+        private string FormatFileSize(long byteCount, bool si = true) {
+            int unit = si ? 1000 : 1024;
+            if (byteCount < unit) return byteCount + " B";
+            int exp = (int)(Math.Log(byteCount) / Math.Log(unit));
+            String pre = (si ? "kMGTPE" : "KMGTPE")[exp - 1] + (si ? "" : "i");
+            return String.Format("{0}{1}B", Convert.ToDecimal(byteCount / Math.Pow(unit, exp)).ToString("0.##"), pre);
         }
 
         private string EstimateFinishTime(long current, long total)
@@ -2355,6 +2575,7 @@ namespace GameLauncher {
                     return;
                 }
             });
+
         }
 
         private void OnDownloadFinished() {
@@ -2378,12 +2599,81 @@ namespace GameLauncher {
                 }
             }
 
+            if(_disableChecks != true) { 
+                if(File.Exists("invalidfiles.dat")) {
+                    playProgressText.Text = "RE-DOWNLOADING INVALID FILES".ToUpper();
+
+                    string[] files = File.ReadAllLines("invalidfiles.dat");
+
+                    foreach(string text in files) {
+                        try { 
+                            string text2 = _settingFile.Read("InstallationDirectory") + text;
+
+                            string address = "http://cdn.worldunited.gg/gamefiles/unpacked" + text.Replace("\\", "/");
+
+                            if (File.Exists(text2 + ".vhbak")) {
+                                File.Delete(text2 + ".vhbak");
+                            }
+                            File.Move(text2, text2 + ".vhbak");
+                            new WebClient().DownloadFile(address, text2);
+                        } catch { }
+                    }                
+                }
+            } else {
+                playProgressText.Text = "Download Completed".ToUpper();
+            }
+
             EnablePlayButton();
 
             extractingProgress.Width = 519;
 
             TaskbarProgress.SetValue(Handle, 100, 100);
             TaskbarProgress.SetState(Handle, TaskbarProgress.TaskbarStates.Normal);
+
+            if(_disableChecks != true) {
+                    playProgressText.Text = "Validating files on background.".ToUpper();
+
+                    //Threaded CheckFiles
+                    var thread = new Thread(() => {
+                    String[] getFilesToCheck = null;
+                    try { 
+                        getFilesToCheck = new WebClientWithTimeout().DownloadString("http://cdn.worldunited.gg/gamefiles/checksums.dat").Split('\n');
+
+                        scannedHashes = new string[getFilesToCheck.Length][];
+                        for (var i = 0; i < getFilesToCheck.Length; i++) {
+                            scannedHashes[i] = getFilesToCheck[i].Split(' ');
+                        }
+
+                        filesToScan = scannedHashes.Length;
+                        totalFilesScanned = 0;
+                        redownloadedCount = 0;
+
+                        Directory.EnumerateFiles(_settingFile.Read("InstallationDirectory"), "*.*", SearchOption.AllDirectories).AsParallel().ForAll((file) => {
+                            for (var i = 0; i < scannedHashes.Length; i++) {
+                                if (scannedHashes[i][1].Trim() == file.Replace(_settingFile.Read("InstallationDirectory"), string.Empty).Trim()) {
+                                    if (scannedHashes[i][0].Trim() != SHA.HashFile(file).Trim()) {
+                                        invalidFileList.Add(file.Replace(_settingFile.Read("InstallationDirectory"), string.Empty).Trim());
+
+                                        Notification.Visible = true;
+                                        Notification.BalloonTipIcon = ToolTipIcon.Info;
+                                        Notification.BalloonTipTitle = "GameLauncherReborn";
+                                        Notification.BalloonTipText = "Invalid file found: [GAMEDIR]" + file.Replace(_settingFile.Read("InstallationDirectory"), string.Empty).Trim();
+                                        Notification.ShowBalloonTip(5000);
+                                        Notification.Dispose();
+                                    }
+                                }
+                            }
+
+                        totalFilesScanned++;
+                    });
+                    } catch(Exception) { }
+                }){ IsBackground = true };
+
+                thread.Start();
+            } else {
+                playProgressText.Text = "Download Completed.".ToUpper();
+            }
+            //End CheckFiles
         }
 
         private void EnablePlayButton() {
@@ -2395,7 +2685,6 @@ namespace GameLauncher {
 
             playButton.BackgroundImage = Properties.Resources.playbutton;
             playButton.ForeColor = Color.White;
-            playProgressText.Text = "Download completed.".ToUpper();
         }
 
         private void OnDownloadFailed(Exception ex)

@@ -24,6 +24,8 @@ namespace SoapBox.JsonScheme {
         public List<string> freeroamServers { get; set; }
         public string modernAuthSupport { get; set; }
         public int secondsToShutDown { get; set; }
+        public string modsUrl { get; set; }
+        public bool rwacallow { get; set; }
     }
 
     public class FreeroamObject {

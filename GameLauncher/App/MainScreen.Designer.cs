@@ -65,7 +65,6 @@
             this.settingsGameFilesCurrent = new System.Windows.Forms.LinkLabel();
             this.settingsGamePathText = new System.Windows.Forms.Label();
             this.addServer = new System.Windows.Forms.Button();
-            this.showmap = new System.Windows.Forms.Label();
             this.launcherIconStatus = new System.Windows.Forms.PictureBox();
             this.launcherStatusText = new System.Windows.Forms.Label();
             this.ServerStatusDesc = new System.Windows.Forms.Label();
@@ -74,10 +73,11 @@
             this.registerText = new System.Windows.Forms.Button();
             this.cdnText = new System.Windows.Forms.Label();
             this.cdnPick = new System.Windows.Forms.ComboBox();
-            this.modNetCheckbox = new System.Windows.Forms.CheckBox();
             this.randomServer = new System.Windows.Forms.Button();
             this.extractingProgress = new GameLauncherReborn.ProgressBarEx();
             this.playProgress = new GameLauncherReborn.ProgressBarEx();
+            this.wordFilterCheck = new System.Windows.Forms.CheckBox();
+            this.vfilesCheck = new System.Windows.Forms.CheckBox();
             ((System.ComponentModel.ISupportInitialize)(this.closebtn)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.settingsButton)).BeginInit();
             ((System.ComponentModel.ISupportInitialize)(this.verticalBanner)).BeginInit();
@@ -515,17 +515,6 @@
             this.addServer.Text = "+";
             this.addServer.UseVisualStyleBackColor = true;
             // 
-            // showmap
-            // 
-            this.showmap.BackColor = System.Drawing.Color.Transparent;
-            this.showmap.ForeColor = System.Drawing.Color.White;
-            this.showmap.Location = new System.Drawing.Point(483, 126);
-            this.showmap.Name = "showmap";
-            this.showmap.Size = new System.Drawing.Size(79, 15);
-            this.showmap.TabIndex = 70;
-            this.showmap.Text = "[ SHOW MAP ]";
-            this.showmap.TextAlign = System.Drawing.ContentAlignment.BottomRight;
-            // 
             // launcherIconStatus
             // 
             this.launcherIconStatus.BackColor = System.Drawing.Color.Transparent;
@@ -621,19 +610,6 @@
             this.cdnPick.Size = new System.Drawing.Size(210, 21);
             this.cdnPick.TabIndex = 84;
             // 
-            // modNetCheckbox
-            // 
-            this.modNetCheckbox.AutoSize = true;
-            this.modNetCheckbox.BackColor = System.Drawing.Color.Transparent;
-            this.modNetCheckbox.Font = new System.Drawing.Font("Microsoft Sans Serif", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, ((byte)(238)));
-            this.modNetCheckbox.ForeColor = System.Drawing.Color.White;
-            this.modNetCheckbox.Location = new System.Drawing.Point(46, 275);
-            this.modNetCheckbox.Name = "modNetCheckbox";
-            this.modNetCheckbox.Size = new System.Drawing.Size(132, 19);
-            this.modNetCheckbox.TabIndex = 87;
-            this.modNetCheckbox.Text = "DISABLE MODNET";
-            this.modNetCheckbox.UseVisualStyleBackColor = false;
-            // 
             // randomServer
             // 
             this.randomServer.Location = new System.Drawing.Point(811, 64);
@@ -677,14 +653,41 @@
             this.playProgress.Size = new System.Drawing.Size(519, 13);
             this.playProgress.Text = "downloadProgress";
             // 
+            // wordFilterCheck
+            // 
+            this.wordFilterCheck.AutoSize = true;
+            this.wordFilterCheck.BackColor = System.Drawing.Color.Transparent;
+            this.wordFilterCheck.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold);
+            this.wordFilterCheck.ForeColor = System.Drawing.SystemColors.Control;
+            this.wordFilterCheck.Location = new System.Drawing.Point(47, 270);
+            this.wordFilterCheck.Name = "wordFilterCheck";
+            this.wordFilterCheck.Size = new System.Drawing.Size(235, 17);
+            this.wordFilterCheck.TabIndex = 93;
+            this.wordFilterCheck.Text = "Disable Word Filtering on Game Chat";
+            this.wordFilterCheck.UseVisualStyleBackColor = false;
+            // 
+            // vfilesCheck
+            // 
+            this.vfilesCheck.AutoSize = true;
+            this.vfilesCheck.BackColor = System.Drawing.Color.Transparent;
+            this.vfilesCheck.Font = new System.Drawing.Font("Microsoft Sans Serif", 8.25F, System.Drawing.FontStyle.Bold);
+            this.vfilesCheck.ForeColor = System.Drawing.SystemColors.Control;
+            this.vfilesCheck.Location = new System.Drawing.Point(47, 288);
+            this.vfilesCheck.Name = "vfilesCheck";
+            this.vfilesCheck.Size = new System.Drawing.Size(218, 17);
+            this.vfilesCheck.TabIndex = 96;
+            this.vfilesCheck.Text = "Disable process that validate files";
+            this.vfilesCheck.UseVisualStyleBackColor = false;
+            // 
             // MainScreen
             // 
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.None;
             this.BackgroundImage = global::GameLauncher.Properties.Resources.loginbg;
             this.BackgroundImageLayout = System.Windows.Forms.ImageLayout.Stretch;
             this.ClientSize = new System.Drawing.Size(891, 529);
+            this.Controls.Add(this.vfilesCheck);
+            this.Controls.Add(this.wordFilterCheck);
             this.Controls.Add(this.randomServer);
-            this.Controls.Add(this.modNetCheckbox);
             this.Controls.Add(this.cdnPick);
             this.Controls.Add(this.cdnText);
             this.Controls.Add(this.ServerStatusIcon);
@@ -692,7 +695,6 @@
             this.Controls.Add(this.ServerStatusDesc);
             this.Controls.Add(this.launcherStatusText);
             this.Controls.Add(this.launcherIconStatus);
-            this.Controls.Add(this.showmap);
             this.Controls.Add(this.addServer);
             this.Controls.Add(this.settingsGameFilesCurrent);
             this.Controls.Add(this.translatedBy);
@@ -786,7 +788,6 @@
         private System.Windows.Forms.LinkLabel settingsGameFilesCurrent;
         private System.Windows.Forms.Label settingsGamePathText;
         private System.Windows.Forms.Button addServer;
-        private System.Windows.Forms.Label showmap;
         private GameLauncherReborn.ProgressBarEx extractingProgress;
         private System.Windows.Forms.PictureBox launcherIconStatus;
         private System.Windows.Forms.Label launcherStatusText;
@@ -796,7 +797,8 @@
         private System.Windows.Forms.Button registerText;
         private System.Windows.Forms.Label cdnText;
         private System.Windows.Forms.ComboBox cdnPick;
-        private System.Windows.Forms.CheckBox modNetCheckbox;
         private System.Windows.Forms.Button randomServer;
+        private System.Windows.Forms.CheckBox wordFilterCheck;
+        private System.Windows.Forms.CheckBox vfilesCheck;
     }
 }

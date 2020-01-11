@@ -18,12 +18,18 @@ namespace GameLauncher.HashPassword {
         }
 
         public static string HashFile(string filename) {
+            if(!File.Exists(filename)) return String.Empty;
+
             SHA1 sha1 = new SHA1CryptoServiceProvider();
-            byte[] retVal = sha1.ComputeHash(File.OpenRead(filename));
+
+            byte[] retVal = new byte[] { };
+
+            using (var test = File.OpenRead(filename)) {
+                retVal = sha1.ComputeHash(test);
+            }
 
             StringBuilder sb = new StringBuilder();
-            for (int i = 0; i < retVal.Length; i++)
-            {
+            for (int i = 0; i < retVal.Length; i++) {
                 sb.Append(retVal[i].ToString("x2"));
             }
 

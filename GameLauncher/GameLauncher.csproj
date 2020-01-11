@@ -1,5 +1,5 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
-<Project DefaultTargets="Build" ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <Import Project="$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props" Condition="Exists('$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props')" />
   <PropertyGroup>
     <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
@@ -8,7 +8,7 @@
     <OutputType>WinExe</OutputType>
     <RootNamespace>GameLauncher</RootNamespace>
     <AssemblyName>GameLauncher</AssemblyName>
-    <TargetFrameworkVersion>v4.5</TargetFrameworkVersion>
+    <TargetFrameworkVersion>v4.6</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <TargetFrameworkProfile>
     </TargetFrameworkProfile>
@@ -124,18 +124,13 @@
     </Reference>
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="App\About.cs">
-      <SubType>Form</SubType>
-    </Compile>
-    <Compile Include="App\About.Designer.cs">
-      <DependentUpon>About.cs</DependentUpon>
-    </Compile>
     <Compile Include="App\AddServer.cs">
       <SubType>Form</SubType>
     </Compile>
     <Compile Include="App\AddServer.Designer.cs">
       <DependentUpon>AddServer.cs</DependentUpon>
     </Compile>
+    <Compile Include="App\Classes\AntiCheat.cs" />
     <Compile Include="App\Classes\Auth\ClassicAuth.cs" />
     <Compile Include="App\Classes\Auth\ModernAuth.cs" />
     <Compile Include="App\Classes\Auth\Tokens.cs" />
@@ -156,12 +151,19 @@
     <Compile Include="App\Classes\Downloader\VerifyCommand.cs" />
     <Compile Include="App\Classes\Events\UpdaterSchema.cs" />
     <Compile Include="App\Classes\ExtractResource.cs" />
+    <Compile Include="App\Classes\GPU\AMD.cs" />
+    <Compile Include="App\Classes\GPU\init.cs" />
+    <Compile Include="App\Classes\GPU\INTEL.cs" />
+    <Compile Include="App\Classes\GPU\NVIDIA.cs" />
+    <Compile Include="App\Classes\HashPassword\MD5.cs" />
     <Compile Include="App\Classes\HashPassword\SHA.cs" />
     <Compile Include="App\Classes\HWID.cs" />
     <Compile Include="App\Classes\IniFile.cs" />
     <Compile Include="App\Classes\Language.cs" />
     <Compile Include="App\Classes\Logger\LogToFile.cs" />
     <Compile Include="App\Classes\ModManager.cs" />
+    <Compile Include="App\Classes\ModNetReloaded\ElectronModNet.cs" />
+    <Compile Include="App\Classes\ModNetReloaded\ModNetReloaded.cs" />
     <Compile Include="App\Classes\NativeFunctions.cs" />
     <Compile Include="App\Classes\Events\Updater.cs" />
     <Compile Include="App\Classes\NFSW.cs" />
@@ -170,12 +172,15 @@
       <SubType>Component</SubType>
     </Compile>
     <Compile Include="App\Classes\Prompt.cs" />
+    <Compile Include="App\Classes\Proxy\CommunicationLog.cs" />
     <Compile Include="App\Classes\Proxy\NancyBootstrapper.cs" />
     <Compile Include="App\Classes\Proxy\NancyGzipCompression.cs" />
+    <Compile Include="App\Classes\Proxy\ProxyException.cs" />
     <Compile Include="App\Classes\Proxy\ProxyHandler.cs" />
     <Compile Include="App\Classes\RPC\CarList.cs" />
     <Compile Include="App\Classes\RPC\DiscordGamePresence.cs" />
     <Compile Include="App\Classes\RPC\EventList.cs" />
+    <Compile Include="App\Classes\RPC\OfflineSaveFile.cs" />
     <Compile Include="App\Classes\Self.cs" />
     <Compile Include="App\Classes\ServerListUpdater.cs" />
     <Compile Include="App\Classes\ServerProxy.cs" />
@@ -214,10 +219,6 @@
     </Compile>
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="App\Classes\FontWrapper.cs" />
-    <EmbeddedResource Include="App\About.resx">
-      <DependentUpon>About.cs</DependentUpon>
-      <SubType>Designer</SubType>
-    </EmbeddedResource>
     <EmbeddedResource Include="App\AddServer.resx">
       <DependentUpon>AddServer.cs</DependentUpon>
       <SubType>Designer</SubType>
@@ -267,14 +268,9 @@
       <DependentUpon>Settings.settings</DependentUpon>
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
     </Compile>
-    <EmbeddedResource Include="SoapBoxModules\udpcrc.soapbox.module" />
-    <EmbeddedResource Include="SoapBoxModules\udpcrypt1.soapbox.module" />
-    <EmbeddedResource Include="SoapBoxModules\udpcrypt2.soapbox.module" />
-    <EmbeddedResource Include="SoapBoxModules\xmppsubject.soapbox.module" />
-    <EmbeddedResource Include="SoapBoxModules\BootFlow.gfx" />
     <Compile Include="App\Classes\WineManager.cs" />
-    <EmbeddedResource Include="SoapBoxModules\global.ini" />
     <EmbeddedResource Include="wine_opts.reg" />
+    <EmbeddedResource Include="SoapBoxModules\BootFlow.gfx" />
     <EmbeddedResource Include="SoapBoxModules\cursor.ani" />
   </ItemGroup>
   <ItemGroup>
@@ -319,8 +315,6 @@
     <None Include="Resources\close_click.png" />
     <None Include="Resources\close.png" />
     <None Include="Resources\close_hover.png" />
-    <EmbeddedResource Include="SoapBoxModules\ModManager.dll" />
-    <EmbeddedResource Include="SoapBoxModules\dinput8.dll" />
     <None Include="Resources\tick.png" />
     <None Include="Resources\map.png" />
     <Content Include="original_icon.ico" />

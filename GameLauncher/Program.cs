@@ -11,18 +11,61 @@ using GameLauncher.App.Classes;
 using GameLauncher.App.Classes.Logger;
 using GameLauncher.HashPassword;
 using GameLauncherReborn;
+using Nancy;
 using SharpRaven;
 using SharpRaven.Data;
+using IniParser;
+using GameLauncher.App.Classes.GPU;
 //using Memes;
 
 namespace GameLauncher {
     internal static class Program {
         [STAThread]
         internal static void Main() {
+            Process.GetCurrentProcess().PriorityClass = ProcessPriorityClass.Idle;
+
+            Console.WriteLine("Application path: " + Path.GetDirectoryName(Application.ExecutablePath));
+
+            /*GPU getinfo = null;
+            
+            switch(GPUHelper.getManufacturer()) {
+                case GPUHelper.GPUManufacturer.NVIDIA:
+                    getinfo = new NVIDIA();
+                    break;
+                case GPUHelper.GPUManufacturer.AMD:
+                    getinfo = new AMD();
+                    break;
+                case GPUHelper.GPUManufacturer.INTEL:
+                    getinfo = new INTEL();
+                    break;
+                default:
+                    getinfo = null;
+                    break;
+            }
+            
+            MessageBox.Show(getinfo.DriverVersion());*/
+
+            if (!Self.hasWriteAccessToFolder(Path.GetDirectoryName(Application.ExecutablePath))) {
+                MessageBox.Show("This application requires admin priviledge. Restarting...");
+                Self.runAsAdmin();
+            }
+
+            IniFile _settingFile = new IniFile("Settings.ini");
+
+            if(!string.IsNullOrEmpty(_settingFile.Read("InstallationDirectory"))) {
+                Console.WriteLine("Game path: " + _settingFile.Read("InstallationDirectory"));
+
+                if (!Self.hasWriteAccessToFolder(_settingFile.Read("InstallationDirectory"))) {
+                    MessageBox.Show("This application requires admin priviledge. Restarting...");
+                    Self.runAsAdmin();
+                }
+            }
 
             File.Delete("log.txt");
 
             Log.StartLogging();
+
+            StaticConfiguration.DisableErrorTraces = false;
 
             Log.Debug("Setting up current directory: " + Path.GetDirectoryName(Application.ExecutablePath));
             Directory.SetCurrentDirectory(Path.GetDirectoryName(Application.ExecutablePath));
@@ -138,7 +181,7 @@ namespace GameLauncher {
                             Application.Run(new MainScreen(SplashScreen2));
                         }
                     } else {
-                        MessageBox.Show(null, "An instance of the application is already running.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        MessageBox.Show(null, "An instance of Launcher is already running.", "GameLauncher", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     }
                 } finally {
                     mutex.Close();

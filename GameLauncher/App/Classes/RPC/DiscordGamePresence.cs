@@ -1,4 +1,4 @@
-﻿using DiscordRPC;
+using DiscordRPC;
 using GameLauncherReborn;
 using System;
 using System.Collections.Generic;
@@ -29,6 +29,7 @@ namespace GameLauncher.App.Classes.RPC {
         public static string PersonaAvatarId = String.Empty;
         public static string PersonaCarId = String.Empty;
         public static string PersonaCarName = String.Empty;
+        public static string LoggedPersonaId = String.Empty;
         public static int PersonaTreasure = 0;
         public static int TotalTreasure = 15;
         public static int TEDay = 0;
@@ -67,15 +68,16 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageText = "Treasure Hunt - Day: " + TEDay,
                     SmallImageKey = "gamemode_treasure"
                 };
-                MainScreen.discordRpcClient.SetPresence(_presence);
 
-                Console.WriteLine(serverreply);
+                MainScreen.discordRpcClient.SetPresence(_presence);
             }
 
 
             if (uri == "/User/SecureLoginPersona") {
+                LoggedPersonaId = GET.Split(';').Last().Split('=').Last();
                 canUpdateProfileField = true;
             }
+
             if (uri == "/User/SecureLogoutPersona") {
                 PersonaId = String.Empty;
                 PersonaName = String.Empty;
@@ -93,7 +95,7 @@ namespace GameLauncher.App.Classes.RPC {
 
                     PersonaName = SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/Name").InnerText.Replace("¤", "[S]");
                     PersonaLevel = SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/Level").InnerText;
-                    PersonaAvatarId = (SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/IconIndex").InnerText == "26") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/IconIndex").InnerText;
+                    PersonaAvatarId = "avatar_" + SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/IconIndex").InnerText;
                     PersonaId = SBRW_XML.SelectSingleNode("UserInfo/personas/ProfileData/PersonaId").InnerText;
 
                     //Let's get rest of PERSONAIDs
@@ -115,12 +117,17 @@ namespace GameLauncher.App.Classes.RPC {
 
             //DRIVING CARNAME
             if (uri == "/DriverPersona/GetPersonaInfo" && canUpdateProfileField == true) {
-                SBRW_XML.LoadXml(serverreply);
-                PersonaName = SBRW_XML.SelectSingleNode("ProfileData/Name").InnerText.Replace("¤", "[S]");
-                PersonaLevel = SBRW_XML.SelectSingleNode("ProfileData/Level").InnerText;
-                PersonaAvatarId = (SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText == "26") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText;
-                PersonaId = SBRW_XML.SelectSingleNode("ProfileData/PersonaId").InnerText;
+                if (LoggedPersonaId == GET.Split(';').Last().Split('=').Last()) {
+                    SBRW_XML.LoadXml(serverreply);
+                    PersonaName = SBRW_XML.SelectSingleNode("ProfileData/Name").InnerText.Replace("¤", "[S]");
+                    PersonaLevel = SBRW_XML.SelectSingleNode("ProfileData/Level").InnerText;
+                    PersonaAvatarId = (SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText == "26") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText;
+                    PersonaId = SBRW_XML.SelectSingleNode("ProfileData/PersonaId").InnerText;
+
+                    AntiCheat.persona_name = SBRW_XML.SelectSingleNode("ProfileData/Name").InnerText.Replace("¤", "[S]");
+                }
             }
+
             if (uri == "/matchmaking/leavelobby" || uri == "/matchmaking/declineinvite") {
                 _presence.Details = "Driving " + PersonaCarName;
                 _presence.State = serverName;
@@ -131,6 +138,7 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageText = "In-Freeroam",
                     SmallImageKey = "gamemode_freeroam"
                 };
+
                 _presence.Timestamps = GetCurrentTimestamp();
                 MainScreen.discordRpcClient.SetPresence(_presence);
 
@@ -174,8 +182,6 @@ namespace GameLauncher.App.Classes.RPC {
                 eventTerminatedManually = true;
             }
 
-            Console.WriteLine(uri);
-
             //IN SAFEHOUSE/FREEROAM
             if (uri == "/DriverPersona/UpdatePersonaPresence") {
                 string UpdatePersonaPresenceParam = GET.Split(';').Last().Split('=').Last();
@@ -218,6 +224,7 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageKey = EventList.getEventType(EventID)
                 };
 
+
                 MainScreen.discordRpcClient.SetPresence(_presence);
 
                 eventTerminatedManually = false;
@@ -232,6 +239,8 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageText = EventList.getEventName(EventID),
                     SmallImageKey = EventList.getEventType(EventID)
                 };
+
+                AntiCheat.disableChecks();
                 MainScreen.discordRpcClient.SetPresence(_presence);
 
                 eventTerminatedManually = false;
@@ -246,6 +255,9 @@ namespace GameLauncher.App.Classes.RPC {
                     SmallImageText = EventList.getEventName(EventID),
                     SmallImageKey = EventList.getEventType(EventID)
                 };
+
+                AntiCheat.event_id = EventID;
+                AntiCheat.enableChecks();
 
                 _presence.Timestamps = GetCurrentTimestamp();
 

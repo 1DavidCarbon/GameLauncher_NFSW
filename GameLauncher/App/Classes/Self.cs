@@ -18,21 +18,20 @@ namespace GameLauncherReborn {
             //"http://api.nightriderz.world/servers.json",
         }; 
 
-        //public static string serverlisturl = mainserver + "/servers";
-
-        public static string internetcheckurl = mainserver + "/generate_204.php";
 		public static string statsurl = mainserver + "/stats";
-
         public static string CDNUrlList = mainserver + "/cdn_list.json"; //hosted on WOPL, coz why not.
 
 		private static IniFile SettingFile = new IniFile("Settings.ini");
 
         public static string DiscordRPCID = "540651192179752970";
 
-        public static int ProxyPort = new Random().Next(6260, 6269);
+        public static int ProxyPort = new Random().Next(6260, 8269);
         public static Boolean sendRequest = true;
 
+        public static String userAgent = null;
+
         public static Boolean CanDisableGame = true;
+        public static String gamedir = null;
 
         public static string rememberjson = "";
         public static string discordid = String.Empty;
@@ -54,10 +53,6 @@ namespace GameLauncherReborn {
             } catch (Exception exception1) {
                 MessageBox.Show("Failed to self-run as admin: " + exception1.Message);
             }
-        }
-
-        public static void Restart(string param = "") {
-            Application.Restart();
         }
 
         public static string CountryName(string twoLetterCountryCode) {
@@ -116,18 +111,6 @@ namespace GameLauncherReborn {
 
 			return returnvalue;
 		}
-
-        public static bool CheckForInternetConnection() {
-            try {
-                using (var client = new WebClientWithTimeout()) {
-                    using (client.OpenRead(internetcheckurl)) {
-                        return true;
-                    }
-                }
-            } catch {
-                return false;
-            }
-        }
 
         public static void centerScreen(Form form) {
             form.StartPosition = FormStartPosition.Manual;

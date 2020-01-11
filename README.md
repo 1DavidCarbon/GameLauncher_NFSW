@@ -1,4 +1,4 @@
-# GameLauncher_NFSW [![Build Status](https://travis-ci.org/SoapboxRaceWorld/GameLauncher_NFSW.svg?branch=master)](https://travis-ci.org/SoapboxRaceWorld/GameLauncher_NFSW)
+# GameLauncher_NFSW [![Build Status](https://travis-ci.org/1DavidCarbon/GameLauncher_NFSW.svg?branch=interface_v3)](https://travis-ci.org/1DavidCarbon/GameLauncher_NFSW)
 A Rewrite of GameLauncher taken from Need For Speed: World
 
 ## Todo

@@ -1,4 +1,4 @@
-name: NetFrameWork.Legacy.CI
+name: Build Status
 
 on: [push]
  

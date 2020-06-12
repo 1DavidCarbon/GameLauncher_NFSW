@@ -768,12 +768,6 @@ namespace GameLauncher {
 
             Notification.Dispose();
 
-            var linksPath = Path.Combine(_settingFile.Read("InstallationDirectory"), ".links");
-            if (File.Exists(linksPath))
-            {
-                CleanLinks(linksPath);
-            }
-
             Process[] allOfThem2 = Process.GetProcessesByName("GameLauncher");
             foreach (var oneProcess in allOfThem2) {
                 Process.GetProcessById(oneProcess.Id).Kill();
@@ -1863,10 +1857,10 @@ namespace GameLauncher {
                                 if (exitCode == -1073740972)    errorMsg = "Game Crash: Debugger crash (0x" + exitCode.ToString("X") + ")";
                                 if (exitCode == -1073741676)    errorMsg = "Game Crash: Division by Zero (0x" + exitCode.ToString("X") + ")";
 
-                                if (exitCode == 1)              errorMsg = "You just killed nfsw.exe via Task Manager";
+                                if (exitCode == 1)              errorMsg = "The process nfsw.exe was killed via Task Manager";
                                 if (exitCode == 2137)           errorMsg = "Launcher killed your game to prevent SpeedBugging.";
 
-                                if (exitCode == -3)             errorMsg = "Server were unable to resolve your request";
+                                if (exitCode == -3)             errorMsg = "The Server was unable to resolve the request";
                                 if (exitCode == -4)             errorMsg = "Another instance is already executed";
                                 if (exitCode == -5)             errorMsg = "DirectX Device was not found. Please install GPU Drivers before playing";
                                 if (exitCode == -6)             errorMsg = "Server was unable to resolve your request";
@@ -2063,7 +2057,7 @@ namespace GameLauncher {
                             WebClientWithTimeout client2 = new WebClientWithTimeout();
                             client2.DownloadFileAsync(new Uri(json2.basePath + "/" + modfile.Name), path + "/" + modfile.Name);
 
-                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged_RELOADED);
                             client2.DownloadFileCompleted += (test, stuff) => { 
                                 //if(SHA.HashFile(path + "/" + modfile.Name).ToLower() == modfile.Checksum) {
                                     CountFiles++;
@@ -2142,7 +2136,7 @@ namespace GameLauncher {
                             WebClientWithTimeout client2 = new WebClientWithTimeout();
                             client2.DownloadFileAsync(new Uri(json.modsUrl + "/" + modfile.file), path + "/" + modfile.file);
 
-                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                            client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged_LEGACY);
                             client2.DownloadFileCompleted += (test, stuff) => {
                                 if (ElectronModNet.calculateHash(path + "/" + modfile.file) == modfile.hash) {
                                     CountFiles++;
@@ -2214,7 +2208,7 @@ namespace GameLauncher {
                                         WebClientWithTimeout client2 = new WebClientWithTimeout();
                                         client2.DownloadFileAsync(new Uri(files.Attributes["download"].Value), path + "/" + realfilepath);
 
-                                        client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged);
+                                        client2.DownloadProgressChanged += new DownloadProgressChangedEventHandler(client_DownloadProgressChanged_LEGACY);
                                         client2.DownloadFileCompleted += (test, stuff) => {
                                             if (MDFive.HashFile(path + "/" + realfilepath).ToLower() == files.InnerText) {
                                                 CountFiles++;
@@ -2320,7 +2314,7 @@ namespace GameLauncher {
             }
         }
 
-        void client_DownloadProgressChanged(object sender, DownloadProgressChangedEventArgs e) {
+        void client_DownloadProgressChanged_LEGACY(object sender, DownloadProgressChangedEventArgs e) {
             this.BeginInvoke((MethodInvoker)delegate {
                 double bytesIn = double.Parse(e.BytesReceived.ToString());
                 double totalBytes = double.Parse(e.TotalBytesToReceive.ToString());
@@ -2329,6 +2323,18 @@ namespace GameLauncher {
 
                 extractingProgress.Value = Convert.ToInt32(Decimal.Divide(CountFiles, CountFilesTotal) * 100);
                 extractingProgress.Width = Convert.ToInt32(Decimal.Divide(CountFiles, CountFilesTotal) * 519);
+            });
+        }
+
+        void client_DownloadProgressChanged_RELOADED(object sender, DownloadProgressChangedEventArgs e) {
+            this.BeginInvoke((MethodInvoker)delegate {
+                double bytesIn = double.Parse(e.BytesReceived.ToString());
+                double totalBytes = double.Parse(e.TotalBytesToReceive.ToString());
+                double percentage = bytesIn / totalBytes * 100;
+                playProgressText.Text = ("Downloaded " + FormatFileSize(e.BytesReceived) + " of " + FormatFileSize(e.TotalBytesToReceive)).ToUpper();
+
+                extractingProgress.Value = Convert.ToInt32(Decimal.Divide(e.BytesReceived, e.TotalBytesToReceive) * 100);
+                extractingProgress.Width = Convert.ToInt32(Decimal.Divide(e.BytesReceived, e.TotalBytesToReceive) * 519);
             });
         }
 
@@ -2359,6 +2365,9 @@ namespace GameLauncher {
                         playProgressText.Text = "Soapbox server launched. Waiting for queries.".ToUpper();
                     } else {
                         var secondsToCloseLauncher = 5;
+
+                        extractingProgress.Value = 100;
+                        extractingProgress.Width = 519;
 
                         while (secondsToCloseLauncher > 0) {
                             playProgressText.Text = string.Format("Loading game. Launcher will minimize in {0} seconds.", secondsToCloseLauncher).ToUpper(); //"LOADING GAME. LAUNCHER WILL MINIMIZE ITSELF IN " + secondsToCloseLauncher + " SECONDS";

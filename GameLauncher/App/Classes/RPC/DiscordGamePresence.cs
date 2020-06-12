@@ -125,7 +125,7 @@ namespace GameLauncher.App.Classes.RPC {
                     SBRW_XML.LoadXml(serverreply);
                     PersonaName = SBRW_XML.SelectSingleNode("ProfileData/Name").InnerText.Replace("¤", "[S]");
                     PersonaLevel = SBRW_XML.SelectSingleNode("ProfileData/Level").InnerText;
-                    PersonaAvatarId = (SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText == "26") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText;
+                    PersonaAvatarId = (SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText == "94") ? "nfsw" : "avatar_" + SBRW_XML.SelectSingleNode("ProfileData/IconIndex").InnerText;
                     PersonaId = SBRW_XML.SelectSingleNode("ProfileData/PersonaId").InnerText;
 
                     AntiCheat.persona_name = SBRW_XML.SelectSingleNode("ProfileData/Name").InnerText.Replace("¤", "[S]");
@@ -155,20 +155,25 @@ namespace GameLauncher.App.Classes.RPC {
                 Self.CanDisableGame = false;
 
                 SBRW_XML.LoadXml(serverreply);
-                EventID = Convert.ToInt32(SBRW_XML.SelectSingleNode("LobbyInfo/EventId").InnerText);
+                var eventIdNode = SBRW_XML.SelectSingleNode("LobbyInfo/EventId");
 
-                _presence.Details = "In Lobby: " + EventList.getEventName(EventID);
-                _presence.State = serverName;
-                _presence.Assets = new Assets
+                if (eventIdNode != null)
                 {
-                    LargeImageText = PersonaName + " - Level: " + PersonaLevel,
-                    LargeImageKey = PersonaAvatarId,
-                    SmallImageText = EventList.getEventName(Convert.ToInt32(EventID)),
-                    SmallImageKey = EventList.getEventType(Convert.ToInt32(EventID))
-                };
-                MainScreen.discordRpcClient.SetPresence(_presence);
+                    EventID = Convert.ToInt32(eventIdNode.InnerText);
 
-                eventTerminatedManually = false;
+                    _presence.Details = "In Lobby: " + EventList.getEventName(EventID);
+                    _presence.State = serverName;
+                    _presence.Assets = new Assets
+                    {
+                        LargeImageText = PersonaName + " - Level: " + PersonaLevel,
+                        LargeImageKey = PersonaAvatarId,
+                        SmallImageText = EventList.getEventName(Convert.ToInt32(EventID)),
+                        SmallImageKey = EventList.getEventType(Convert.ToInt32(EventID))
+                    };
+                    MainScreen.discordRpcClient.SetPresence(_presence);
+
+                    eventTerminatedManually = false;
+                }
             }
 
             if(uri == "/matchmaking/joinqueueracenow") {

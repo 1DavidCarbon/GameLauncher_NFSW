@@ -14,7 +14,6 @@ using GameLauncherReborn;
 using Nancy;
 using IniParser;
 using GameLauncher.App.Classes.GPU;
-using static MeTonaTOR.MessageBox;
 using System.Reflection;
 using Newtonsoft.Json;
 using System.Linq;
@@ -31,25 +30,6 @@ namespace GameLauncher {
             }
 
             Console.WriteLine("Application path: " + Path.GetDirectoryName(Application.ExecutablePath));
-
-            /*GPU getinfo = null;
-            
-            switch(GPUHelper.getManufacturer()) {
-                case GPUHelper.GPUManufacturer.NVIDIA:
-                    getinfo = new NVIDIA();
-                    break;
-                case GPUHelper.GPUManufacturer.AMD:
-                    getinfo = new AMD();
-                    break;
-                case GPUHelper.GPUManufacturer.INTEL:
-                    getinfo = new INTEL();
-                    break;
-                default:
-                    getinfo = null;
-                    break;
-            }
-            
-            MeTonaTOR.MessageBox.Show(getinfo.DriverVersion());*/
 
             if (!Self.hasWriteAccessToFolder(Path.GetDirectoryName(Application.ExecutablePath))) {
                 MessageBox.Show("This application requires admin priviledge. Restarting...");
@@ -76,10 +56,6 @@ namespace GameLauncher {
                 }
             }
 
-            if (!_settingFile.KeyExists("DisableVerifyHash")) {
-                _settingFile.Write("DisableVerifyHash", "1");
-            }
-
             if (!string.IsNullOrEmpty(_settingFile.Read("InstallationDirectory"))) {
                 Console.WriteLine("Game path: " + _settingFile.Read("InstallationDirectory"));
 
@@ -89,9 +65,11 @@ namespace GameLauncher {
                 }
             }
 
-            File.Delete("log.txt");
+            File.Delete("communication.log");
+            File.Delete("launcher.log");
 
             Log.StartLogging();
+            Log.Debug("GameLauncher " + Application.ProductVersion);
 
             //StaticConfiguration.DisableErrorTraces = false;
 
